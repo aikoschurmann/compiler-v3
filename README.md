@@ -20,15 +20,14 @@ Requires a POSIX environment (tested on macOS) and a C compiler supporting C11 o
 ```
 Usage: ./out/compiler <file> [options]
 Options:
-  --tokens            Print all tokens
-  --time              Print how long lexing took (single run)
-  --stats             Print file size and MB/s throughput (single run)
-  --bench N           Run N iterations and print benchmarks
-  --warmup N          Run N warm-up iterations before measuring (default: 2)
-  --keep-lexer        Reuse the same lexer/arena across runs (reduces alloc noise)
-  --csv               Emit CSV (run_index,seconds,MBps,tokens) for measured runs
+  -t, --tokens    Print all tokens
+  -a, --ast       Print the parsed AST (after parsing)
+  -y, --types     Print type internment results
+  -T, --time      Print lex/parse timing and throughput
+  -h, --help      Show this help
+  -v, --version   Print version and exit
 ```
-Use `--bench` with `--warmup` and `--keep-lexer` to get stable measurements (warmups reduce JIT / cache noise; reusing lexer/arena avoids repeated allocations).
+
 
 ---
 
@@ -61,12 +60,6 @@ Use `--bench` with `--warmup` and `--keep-lexer` to get stable measurements (war
 
 ---
 
-## Benchmarking tips
-- Use `--warmup 2` (or more) to prime caches and get stable numbers.
-- Use `--keep-lexer` to avoid repeated arena and interner allocations when benchmarking multiple runs — this reduces measurement noise caused by allocator churn.
-- For CSV output and automated runs, combine `--bench` + `--csv` to collect machine-readable results.
-
----
 
 ## Where to look in the code
 - `lexer.c` — pointer scanning, token emission, whitespace/comment skipping
