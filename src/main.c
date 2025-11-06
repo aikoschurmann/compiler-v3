@@ -699,12 +699,13 @@ int main(int argc, char **argv) {
     init_promotion_matrix();
 
 
-    for (int i = 0; i < NUM_TYPE_KINDS; i++) {
-        for (int j = 0; j < NUM_TYPE_KINDS; j++) {
-            printf("%2d ", promotion_matrix[i][j]);
-        }
-        printf("\n");
-    }
+    // print promotion matrix for debugging
+    //for (int i = 0; i < NUM_TYPE_KINDS; i++) {
+    //    for (int j = 0; j < NUM_TYPE_KINDS; j++) {
+    //        printf("%2d ", promotion_matrix[i][j]);
+    //    }
+    //    printf("\n");
+    //}
 
     if (result != 0) {
         fprintf(stderr, "Type internment failed\n");
