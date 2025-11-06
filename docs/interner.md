@@ -224,9 +224,9 @@ if (hit) {
 ```
 
 ## How it integrates
-- **Arena**: All canonical keys stored in arena so pointer identity equals structural equality.
-- **HashMap**: Prevents duplicates; maps slices to existing canonical entry if present.
-- **DynArray**: Dense ordering for iteration, maps dense index to pointer in arena of InternResult.
+- **[Arena](arena.md)**: All canonical keys stored in arena so pointer identity equals structural equality.
+- **[HashMap](hashmap.md)**: Prevents duplicates; maps slices to existing canonical entry if present.
+- **[DynArray](dynarray.md)**: Dense ordering for iteration, maps dense index to pointer in arena of InternResult.
 
 ## Invariants
 - Canonical data immutable after copy.
