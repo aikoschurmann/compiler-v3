@@ -1,4 +1,16 @@
 # Dense Arena Interner
+## On this page
+- [What it is](#what-it-is)
+- [Why use it](#why-use-it)
+- [Core data structures](#core-data-structures)
+- [Core operations](#core-operations)
+- [Typical usage](#typical-usage)
+- [Why we need an interner](#why-we-need-an-interner)
+	- [Lexing in more detail: keyword lookup](#lexing-in-more-detail-keyword-lookup)
+	- [Parsing in more detail: identifiers and scopes](#parsing-in-more-detail-identifiers-and-scopes)
+	- [Semantic analysis in more detail: types and promotion](#semantic-analysis-in-more-detail-types-and-promotion)
+- [How it integrates](#how-it-integrates)
+- [Invariants](#invariants)
 ## What it is
 A Dense Arena Interner is a small layer that **stores one canonical copy** of each unique value and gives each one a **stable small integer index**. It sits on top of three underlying pieces:
 
@@ -22,12 +34,21 @@ Identical values return the **same pointer and same index**.
    - A new **Entry** is created with a new **dense index**.
    - An **InternResult** is pushed into the dense `DynArray`.
    - The canonical key is inserted into the `HashMap`.
-   - The new pointer + handle are returned.
+   - The new pointer + handle are returned in the form of InternResult.
 
 Result: **One unique, stable, interned copy per distinct value**, with **fast pointer/handle equality**.
 
+## Why use it
+| Need | Interner advantage |
+|------|--------------------|
+| Fast equality | Pointer compare instead of deep compare/strcmp |
+| Deduplication | One canonical copy per unique value |
+| Dense indexing | Direct array lookups (promotion matrix, symbol tables) |
+| Stable lifetime | Arena guarantees immovable pointers |
+| Pluggable types | Custom hash/copy/equality wrappers per domain |
 
-# Why we need an interner
+
+## Why we need an interner
 - Lexing: Identifiers & string literals interned once, so keyword detection and identifier equality become pointer comparisons instead of repeated strcmp + allocation.
 - Parsing: AST nodes hold canonical names (and later, type names). Structural equality reduces to pointer equality; lifetime managed by arena.
 - Semantic analysis: Types & symbols interned; type equality O(1), dense indices drive tables (promotion matrix, vtables, etc.).
@@ -201,15 +222,6 @@ Roles of the function pointers:
 - `copy_func` – How to make the canonical key (e.g., `string_copy_func` NUL-terminates; `binary_copy_func` copies raw bytes).
 - `hash_func` – Hashing of the key for the HashMap (must match what `cmp_func` compares).
 - `cmp_func` – Equality/ordering for keys (must consider the same bytes `hash_func` used).
-
-## Why use it
-| Need | Interner advantage |
-|------|--------------------|
-| Fast equality | Pointer compare instead of deep compare/strcmp |
-| Deduplication | One canonical copy per unique value |
-| Dense indexing | Direct array lookups (promotion matrix, symbol tables) |
-| Stable lifetime | Arena guarantees immovable pointers |
-| Pluggable types | Custom hash/copy/equality wrappers per domain |
 
 ## Typical usage
 
