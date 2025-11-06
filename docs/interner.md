@@ -55,9 +55,72 @@ Benefits:
 - Pointer equality for later symbol table operations (parser / semantic phases reuse `tok.record`).
 - Metadata lets you attach TokenType or other flags without a separate map.
 
+### Parsing in more detail: identifiers and scopes
+Parser reuses the lexer's canonical record to avoid re-hashing names and to make symbol lookups trivial.
+
+AST identifier node can store the canonical record:
+```c
+typedef struct {
+	const InternResult *name; // canonical intern record from token
+	Span span;
+} AstIdent;
+
+// When consuming an identifier token
+AstIdent *make_ident(Token tok) {
+	AstIdent *id = arena_alloc(ast_arena, sizeof *id);
+	id->name = tok.record; // zero-copy, canonical
+	id->span = tok.span;
+	return id;
+}
+```
 
 
-## Core data structures (conceptual)
+Notes:
+- No additional allocations: parser just threads canonical pointers through AST.
+
+
+### Semantic analysis in more detail: types and promotion
+Types are interned so equality is pointer equality, and dense indices power fast tables.
+
+Interning a composite type (e.g., function type):
+```c
+// Build a Type prototype (binary snapshot) and intern it
+Type proto = {0};
+proto.kind = TY_FUNC;
+proto.u.func.param_count = n;
+proto.u.func.params = params_canonical_ptrs; // array of canonical Type*
+proto.u.func.ret = ret_type_canonical;
+
+Slice s = { (const char*)&proto, (uint32_t)sizeof(Type) };
+InternResult *ir = intern(TYPE_I, &s, NULL);
+Type *T = (Type*)((Slice*)ir->key)->ptr; // canonical Type*
+int handle = ir->entry->dense_index;     // dense handle
+```
+
+Type checks reduce to pointer compares:
+```c
+bool same = (lhs_type_ptr == rhs_type_ptr);
+```
+
+Promotion/operation tables index by dense handles:
+```c
+// Example: binary op result via a promotion matrix
+int a = lhs_type_handle; // e.g., from lhs_ir->entry->dense_index
+int b = rhs_type_handle; // ...
+int res_handle = PROMO[OP_ADD][a][b];
+if (res_handle < 0) report_type_error(...);
+Type *res_type = handle_to_type_ptr(res_handle);
+```
+
+
+Benefits:
+- O(1) type equality and memoization of constructed types (e.g., repeated func signatures).
+- Dense indices enable compact arrays for promotions and traits.
+- Arena-backed canonical data stays valid throughout analysis without copies.
+
+
+
+## Core data structures
 ```c
 typedef struct {
 	void *key;      // canonical arena copy (e.g. Slice* or Type*)
@@ -100,16 +163,64 @@ typedef struct DenseArenaInterner {
 | Pluggable types | Custom hash/copy/equality wrappers per domain |
 
 ## Typical usage
-```c
-// Prepare interner for Types
-HashMap *type_map = hashmap_create(64);
-DenseArenaInterner *TI = intern_table_create(type_map, arena, type_copy_func, type_hash_wrapper, type_cmp_wrapper);
 
-Type proto = { .kind = TY_PTR, .u.ptr.target = some_other_type };
-Slice s = { .ptr = (const char*)&proto, .len = sizeof(Type) };
-InternResult *r = intern(TI, &s, NULL);
-Type *canonical = (Type*)((Slice*)r->key)->ptr; // canonical, stable
-int handle = r->entry->dense_index;             // small integer handle
+### 1) Identifiers/strings (common case)
+```c
+// Create a string interner for identifiers (stores one canonical copy per spelling)
+HashMap *id_map = hashmap_create(128);
+DenseArenaInterner *ID_I = intern_table_create(id_map, arena, string_copy_func, slice_hash, slice_cmp);
+
+// Given two slices into the source buffer for an identifier
+Slice str1 = { start_ptr1, (uint32_t)len1 };
+InternResult *ir1 = intern(ID_I, &str1, NULL);
+
+Slice str2 = { start_ptr2, (uint32_t)len2 };
+InternResult *ir2 = intern(ID_I, &str2, NULL);
+
+// Use cases
+int handle1 = ir1->entry->dense_index;            // compact handle for side tables
+int handle2 = ir2->entry->dense_index;            // compact handle for side tables
+
+bool eq = handle1 == handle2; // True if same string
+
+const char *cstr = interner_get_cstr(ID_I, handle); // Gets string out of arena
+// Pointer equality across the compiler via ir->key (canonical)
+```
+
+### 2) Types as binary snapshots (semantic analysis)
+```c
+// Create a type interner using binary snapshots (user-provided hash/cmp over the snapshot)
+HashMap *type_map = hashmap_create(128);
+DenseArenaInterner *TYPE_I = intern_table_create(type_map, arena, binary_copy_func, type_hash, type_cmp);
+// type_hash/type_cmp: wrappers you implement that hash/compare the snapshot Slice contents
+
+// Example: build and intern a pointer type to canonical T
+Type ptr_proto = { .kind = TY_PTR, .u.ptr.target = T };
+Slice s = { (const char*)&ptr_proto, (uint32_t)sizeof(Type) };
+InternResult *r = intern(TYPE_I, &s, NULL);
+Type *ptr_type = (Type*)((Slice*)r->key)->ptr; // canonical Type*
+int ptr_handle = r->entry->dense_index;        // dense index for tables
+
+// Equality reduces to pointer compare
+bool same = (ptr_type == some_other_canonical_type_ptr);
+
+// Dense-index side tables (e.g., promotion matrix, attributes)
+// attrs[ptr_handle] = ...;
+```
+
+### 3) Lookup without insert (keywords)
+```c
+// Pre-seed a keyword interner with string_copy_func
+HashMap *kw_map = hashmap_create(64);
+DenseArenaInterner *KW_I = intern_table_create(kw_map, arena, string_copy_func, slice_hash, slice_cmp);
+// ...intern each keyword once with meta = (void*)(uintptr_t)TokenType ...
+
+// At lex time, check if an identifier is a keyword without allocating
+Slice ident = { start_ptr, (uint32_t)len };
+InternResult *hit = intern_peek(KW_I, &ident);
+if (hit) {
+	TokenType tt = (TokenType)(uintptr_t)hit->entry->meta; // recognized keyword
+}
 ```
 
 ## How it integrates
