@@ -9,9 +9,53 @@ Canonicalization + indexing layer built on top of:
 You provide a prototype (wrapped as `Slice`); the interner returns a canonical pointer and a small integer handle. Identical content is deduplicated.
 
 # Why we need an interner
-- Lexing: Every identifier and string literal becomes a single canonical copy. Tokens point to that, so name equality is a pointer compare and we avoid repeated allocations.
-- Parsing: AST nodes store canonical names (and later, type names) instead of duplicating text. Comparing names is cheap, and lifetimes are stable via the arena.
-- Semantic analysis: Types and symbols are interned so structurally equal things share one pointer/handle. This makes type equality O(1) and enables dense indices for fast tables (e.g., promotion matrix).
+- Lexing: Identifiers & string literals interned once, so keyword detection and identifier equality become pointer comparisons instead of repeated strcmp + allocation.
+- Parsing: AST nodes hold canonical names (and later, type names). Structural equality reduces to pointer equality; lifetime managed by arena.
+- Semantic analysis: Types & symbols interned; type equality O(1), dense indices drive tables (promotion matrix, vtables, etc.).
+
+### Lexing in more detail: keyword lookup
+Instead of a manual chain of `strncmp` checks for every identifier, we intern the slice of source text and tag known keywords with metadata. Then any later occurrence of the same spelling hits the existing entry instantly.
+
+Minimal pattern:
+```c
+// During lexer initialization
+static struct { const char *kw; TokenType tt; } KW[] = {
+	{"fn", TOK_FN}, {"if", TOK_IF}, {"else", TOK_ELSE}, {"while", TOK_WHILE},
+	{"for", TOK_FOR}, {"return", TOK_RETURN}, {"break", TOK_BREAK}, {"continue", TOK_CONTINUE},
+	{"const", TOK_CONST}, {"true", TOK_TRUE}, {"false", TOK_FALSE},
+};
+
+HashMap *kw_map = hashmap_create(64);
+DenseArenaInterner *KW_I = intern_table_create(kw_map, arena, string_copy_func, slice_hash, slice_cmp);
+
+for (size_t i = 0; i < sizeof(KW)/sizeof(KW[0]); ++i) {
+	Slice s = { KW[i].kw, (uint32_t)strlen(KW[i].kw) };
+	// Store TokenType as metadata (cast through pointer-sized integer if needed)
+	intern(KW_I, &s, (void*)(uintptr_t)KW[i].tt);
+}
+
+// In the main lex loop when we scan an identifier span
+Slice ident = { start_ptr, (uint32_t)(cur - start_ptr) };
+InternResult *hit = intern_peek(KW_I, &ident);
+Token tok;
+tok.slice = ident; // points into source; stable during lexing
+if (hit) {
+	tok.type = (TokenType)(uintptr_t)hit->entry->meta; // keyword token
+	tok.record = hit; // canonical keyword record
+} else {
+	// Not a keyword: intern into the general identifier table
+	InternResult *id_rec = intern(ID_I, &ident, NULL); // ID_I another interner
+	tok.type = TOK_IDENTIFIER;
+	tok.record = id_rec;
+}
+```
+
+Benefits:
+- Single hash+lookup per identifier vs many `strncmp` along a keyword list.
+- Pointer equality for later symbol table operations (parser / semantic phases reuse `tok.record`).
+- Metadata lets you attach TokenType or other flags without a separate map.
+
+
 
 ## Core data structures (conceptual)
 ```c
