@@ -25,6 +25,7 @@ typedef struct ArenaBlock {
     size_t used;             // Amount of memory used in this block
     char data[];             // Flexible array member for actual data
 } ArenaBlock;
+
 typedef struct Arena {
     ArenaBlock *blocks;      // Linked list of memory blocks
     size_t block_size;       // Size of each block (initial capacity)

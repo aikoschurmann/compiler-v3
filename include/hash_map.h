@@ -21,6 +21,7 @@ typedef struct {
 
 /* Constructor / Destructor */
 HashMap* hashmap_create(size_t bucket_count);
+
 void hashmap_destroy(
     HashMap* map,
     void (*free_key)(void*),
