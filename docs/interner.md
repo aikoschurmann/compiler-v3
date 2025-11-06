@@ -206,30 +206,7 @@ typedef struct DenseArenaInterner {
 - `interner_get_cstr(interner, idx)` – convenience for string keys.
 - `intern_table_destroy(interner, free_key, free_value)` – teardown (arena free if desired).
 
-### Intern (conceptual) pseudo-code
-```c
-InternResult* intern(DenseArenaInterner *I, Slice *s, void *meta) {
-	// 1) Lookup by content
-	InternResult *found = intern_peek(I, s);
-	if (found) return found;
 
-	// 2) Canonicalize key in arena
-	void *key_can = I->copy_func(I->arena, s->ptr, s->len);
-
-	// 3) Create entry + dense index
-	Entry *e = arena_alloc(I->arena, sizeof *e);
-	e->meta = meta;
-	e->dense_index = I->dense_index_count++;
-
-	// 4) Store interner record and register
-	InternResult *ir = arena_alloc(I->arena, sizeof *ir);
-	ir->key = key_can;  // e.g., canonical Slice* or Type-snapshot pointer
-	ir->entry = e;
-	dynarray_push_ptr(I->dense_array, ir);
-	hashmap_put(I->hashmap, key_can, ir, I->hash_func, I->cmp_func);
-	return ir;
-}
-```
 ### Function pointer roles
 - `copy_func` – How to make the canonical key (e.g., `string_copy_func` NUL-terminates; `binary_copy_func` copies raw bytes).
 - `hash_func` – Hashing of the key for the HashMap (must match what `cmp_func` compares).
