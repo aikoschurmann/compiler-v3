@@ -1,12 +1,31 @@
 # Dense Arena Interner
-
 ## What it is
-Canonicalization + indexing layer built on top of:
-- [Arena allocator](arena.md) for stable storage & bulk lifetime.
-- [HashMap](hashmap.md) for fast content-based lookup.
-- [DynArray](dynarray.md) for dense ordered list of interned entries.
+A Dense Arena Interner is a small layer that **stores one canonical copy** of each unique value and gives each one a **stable small integer index**. It sits on top of three underlying pieces:
 
-You provide a prototype (wrapped as `Slice`); the interner returns a canonical pointer and a small integer handle. Identical content is deduplicated.
+- **Arena** — stores the canonical data so pointers stay stable.
+- **HashMap** — checks whether a given value already exists (deduplication).
+- **DynArray** — keeps all interned values in a dense 0..N-1 array for indexing.
+
+You provide a temporary value (as a `Slice`: pointer + length).  
+The interner returns:
+- a **canonical pointer** (into the arena), and
+- a **dense index** (small integer handle).
+
+Identical values return the **same pointer and same index**.
+
+### How it works (quick flow)
+1. You give the interner a temporary `Slice` (does not need to be long-lived).
+2. It hashes and compares the slice against existing entries via `hash_func` and `cmp_func`.
+3. If an identical value **already exists**, the interner returns the existing canonical pointer and handle — **no allocation**.
+4. If it **does not exist**:
+   - `copy_func` copies the slice into the **arena**, producing the canonical version.
+   - A new **Entry** is created with a new **dense index**.
+   - An **InternResult** is pushed into the dense `DynArray`.
+   - The canonical key is inserted into the `HashMap`.
+   - The new pointer + handle are returned.
+
+Result: **One unique, stable, interned copy per distinct value**, with **fast pointer/handle equality**.
+
 
 # Why we need an interner
 - Lexing: Identifiers & string literals interned once, so keyword detection and identifier equality become pointer comparisons instead of repeated strcmp + allocation.
@@ -152,6 +171,36 @@ typedef struct DenseArenaInterner {
 - `interner_foreach(interner, callback, user)` – iterate dense order.
 - `interner_get_cstr(interner, idx)` – convenience for string keys.
 - `intern_table_destroy(interner, free_key, free_value)` – teardown (arena free if desired).
+
+Intern (conceptual) pseudo-code:
+```c
+InternResult* intern(DenseArenaInterner *I, Slice *s, void *meta) {
+	// 1) Lookup by content
+	InternResult *found = intern_peek(I, s);
+	if (found) return found;
+
+	// 2) Canonicalize key in arena
+	void *key_can = I->copy_func(I->arena, s->ptr, s->len);
+
+	// 3) Create entry + dense index
+	Entry *e = arena_alloc(I->arena, sizeof *e);
+	e->meta = meta;
+	e->dense_index = I->dense_index_count++;
+
+	// 4) Store interner record and register
+	InternResult *ir = arena_alloc(I->arena, sizeof *ir);
+	ir->key = key_can;  // e.g., canonical Slice* or Type-snapshot pointer
+	ir->entry = e;
+	dynarray_push_ptr(I->dense_array, ir);
+	hashmap_put(I->hashmap, key_can, ir, I->hash_func, I->cmp_func);
+	return ir;
+}
+```
+
+Roles of the function pointers:
+- `copy_func` – How to make the canonical key (e.g., `string_copy_func` NUL-terminates; `binary_copy_func` copies raw bytes).
+- `hash_func` – Hashing of the key for the HashMap (must match what `cmp_func` compares).
+- `cmp_func` – Equality/ordering for keys (must consider the same bytes `hash_func` used).
 
 ## Why use it
 | Need | Interner advantage |

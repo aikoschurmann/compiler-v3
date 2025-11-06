@@ -58,6 +58,17 @@ int *p = dynarray_get(&arr, 10);
 dynarray_free(&arr);
 ```
 
+Struct elements example:
+```c
+typedef struct { int x, y; } Pt;
+DynArray pts; dynarray_init(&pts, sizeof(Pt));
+for (int i = 0; i < 3; ++i) {
+	Pt *p = dynarray_push_uninit(&pts); // returns a writable slot
+	p->x = i; p->y = i*i;
+}
+dynarray_free(&pts);
+```
+
 [Arena](arena.md)-backed example:
 ```c
 Arena *A = arena_create(1<<20);
@@ -80,31 +91,14 @@ dynarray_push_ptr(&nodes, n);
 - Arena-backed growth leaks old buffers until arena reset (acceptable for whole-pass lifetime).
 - No per-element allocation overhead.
 
+
 ## Integration with other modules
 - HashMap buckets are `DynArray` of `KeyValue` for collision chains.
 - Interner dense array stores `InternResult*` pointers in a `DynArray` enabling direct index access.
 - Parser stores lists (tokens, params, declarations) without writing separate list logic per element type.
 
-## When to choose arena-backed
-Use arena-backed when:
-- Lifetime of all elements == lifetime of arena.
-- You want to avoid per-grow realloc cost for very large arrays (allocate big upfront).
-
-Use heap-backed when:
-- You need to free just this array before program end.
-- Capacity shrink or memory recycling matters.
-
-## Limitations
-- No built-in bounds checks (caller must ensure valid indices).
-- Removal does not compact unless implemented (may leave gaps if you design that way).
-- Arena-backed mode cannot individually free old capacity blocks until arena reset.
-
-## Debug recommendations
-- Track peak `count` vs `capacity` to tune initial capacities.
-- Add assertions on `index < count` in debug builds.
-- Optionally poison freed (popped) elements for easier invalid access detection.
 
 ## Cross reference
 - `arena.md` for allocator semantics.
 - `hashmap.md` for usage as bucket container.
-- `dense_arena_interner.md` for storing canonical entries densely.
+- `interner.md` for storing canonical entries densely.

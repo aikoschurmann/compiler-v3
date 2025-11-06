@@ -4,7 +4,7 @@
 A simple bump allocator:
 - One contiguous memory region (or a chain of blocks).
 - Pointer (offset) moves forward on each allocation.
-- No per-allocation free; all memory reclaimed at arena_destroy.
+ - No per-allocation free; reclaim everything at `arena_destroy`.
 
 ## Code datastructures
 ```c
@@ -22,13 +22,14 @@ typedef struct Arena {
 ```
 
 ## Core operations
-- arena_create(capacity)
-- arena_alloc(arena, size)
-- arena_calloc(arena, size)
-- arena_destroy(arena)
+- `arena_create(initial_capacity)` – create an arena with an initial block.
+- `arena_alloc(arena, size)` – allocate uninitialized bytes (fast bump).
+- `arena_calloc(arena, size)` – allocate zeroed bytes.
+- `arena_destroy(arena)` – free all blocks at once.
+- `arena_total_allocated(arena)` – total bytes currently allocated (diagnostics).
 
 ## Why use it
-A memory arena is a pre-allocated block of memory used for fast, efficient allocation of many small objects or strings. Instead of calling malloc() repeatedly (which incurs overhead and fragmentation), the arena allocates  memory linearly from its internal buffer. This is particularly useful in compilers or lexers where many short-lived objects (like tokens or identifiers) need to be allocated quickly. This entire block can be freed at once and thus idividual objects within this block don't need to be freed. This is especially usefull for recursive structures like an AST. Else on the root you would need to recurse down the entire AST freeing each node one by one. Now you simply free the arena in which the AST is located and thus it becomes 0(1).
+An arena allocates memory linearly, making many small allocations cheap and predictable. Instead of calling `malloc`/`free` repeatedly (overhead, fragmentation), you bump a pointer and keep going. This is ideal for compilers where lots of short‑lived objects (tokens, identifiers, AST nodes, types) are created during a pass. At the end, call `arena_destroy` and reclaim everything in O(1)—no per‑object frees or deep recursion to tear down an AST.
 
 | Need | Arena advantage |
 |------|------------------|
@@ -39,12 +40,22 @@ A memory arena is a pre-allocated block of memory used for fast, efficient alloc
 
 ## Typical usage
 ```c
-Arena *a = arena_create(1 << 20);
-char *buff = arena_alloc(a, len);
+// Create an arena (1 MiB initial block)
+Arena *a = arena_create(1u << 20);
+
+// Allocate and copy a string (remember to add space for NUL if needed)
+char *buf = arena_alloc(a, len + 1);
 memcpy(buf, data, len);
-return buff;
+buf[len] = '\0';
+
+// Allocate a zeroed struct
+typedef struct Node { int kind; struct Node *left, *right; } Node;
+Node *n = arena_calloc(a, sizeof *n);
+n->kind = 1; // use it
+
+// ... use all arena-backed objects ...
+
+// Tear down everything at once
+arena_destroy(a);
 ```
-
-
-
 

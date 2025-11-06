@@ -1,16 +1,16 @@
 # HashMap
 
 ## What it is
-An open-address style abstraction built with separate chaining using dynamic arrays:
-- `bucket_count` buckets; each bucket is a small dynamic array of `KeyValue` pairs.
-- User supplies `hash(void*)` and `cmp(void*, void*)` so map works with arbitrary key types.
-- No automatic resizing unless you call `hashmap_rehash`.
+A separate-chaining hash map backed by dynamic arrays:
+- `bucket_count` buckets; each bucket is a `DynArray` of `KeyValue` pairs.
+- Caller supplies `hash(void*)` and `cmp(void*, void*)` for arbitrary key types.
+- No automatic resizing; call `hashmap_rehash` when you decide to grow.
 
 ## Core data structures
 ```c
 typedef struct { void *key; void *value; } KeyValue;
 typedef struct {
-	DynArray *buckets;     // array of DynArray* buckets
+	DynArray *buckets;     // array of buckets; each bucket is a DynArray of KeyValue
 	size_t bucket_count;   // number of buckets
 	size_t size;           // total key-value pairs
 } HashMap;
@@ -37,13 +37,20 @@ typedef struct {
 
 ## Typical usage
 ```c
-size_t str_hash(void *k) { /* FNV or similar */ }
-int str_cmp(void *a, void *b) { return strcmp(a, b); }
-
 HashMap *map = hashmap_create(64);
-hashmap_put(map, key, value, str_hash, str_cmp);
-void *val = hashmap_get(map, key, str_hash, str_cmp);
-hashmap_destroy(map, NULL, NULL); // if keys/values owned elsewhere
+
+// Keys must be stable while in the map (e.g., allocated in an arena or interned)
+extern size_t slice_hash(void*);
+extern int slice_cmp(void*, void*);
+
+Slice *k = arena_alloc(A, sizeof *k);
+*k = (Slice){ .ptr = name_ptr, .len = (uint32_t)name_len };
+hashmap_put(map, k, value_ptr, slice_hash, slice_cmp);
+void *val = hashmap_get(map, k, slice_hash, slice_cmp);
+
+
+// Destruction: pass destructors if the map owns keys/values; otherwise NULLs
+hashmap_destroy(map, /*free_key*/NULL, /*free_value*/NULL);
 ```
 
 ## Complexity characteristics
@@ -59,9 +66,9 @@ hashmap_destroy(map, NULL, NULL); // if keys/values owned elsewhere
 
 
 ## When to rehash
-Trigger a rehash when `size / bucket_count` (load factor) exceeds ~0.75 for performance. The project currently leaves policy to the caller.
+Trigger a rehash when `size / bucket_count` (load factor) exceeds ~0.75 for performance. A simple check is `if (size * 4 >= 3 * bucket_count) rehash(...)`. Policy is left to the caller.
 
 ## Limitations
 - No automatic growth (caller must call `hashmap_rehash`).
 - Keys assumed stable (no mutation affecting their hash while stored).
-- Requires explicit memory management for key/value if they were separately allocated destructors must be provided upon destroy of map.
+- If the map owns keys/values, provide destructors to `hashmap_destroy`; otherwise pass NULLs.
