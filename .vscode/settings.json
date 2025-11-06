@@ -1,0 +1,33 @@
+{
+    "files.associations": {
+        "*.def": "c",
+        "stddef.h": "c",
+        "parser.h": "c",
+        "string.h": "c",
+        "ast_dyn_node_array.h": "c",
+        "ast.h": "c",
+        "dynamic_array.h": "c",
+        "util.h": "c",
+        "type.h": "c",
+        "semantic_analysis.h": "c",
+        "stdint.h": "c",
+        "stdlib.h": "c",
+        "intern_table.h": "c",
+        "token.h": "c",
+        "hash_map.h": "c",
+        "arena.h": "c",
+        "dense_arena_interner.h": "c",
+        "utils.h": "c",
+        "stdbool.h": "c",
+        "resource.h": "c",
+        "time.h": "c",
+        "lexer.h": "c",
+        "__node_handle": "c",
+        "__locale": "c",
+        "string": "c",
+        "string_view": "c",
+        "parse_statements.h": "c",
+        "scope.h": "c"
+    },
+    "C_Cpp.default.compilerPath": "/usr/bin/gcc"
+}

@@ -1,0 +1,145 @@
+#  SYNTAX::
+#    [] - optional
+#    {} - zero or more repetitions
+#    () - grouping
+#    |  - alternatives
+#    <name> - non-terminal symbol
+#    NAME - terminal symbol (token)
+#
+#  KEYWORDS:
+#    FN, IF, ELSE, WHILE, FOR, RETURN, BREAK, CONTINUE, CONST
+#  
+#  OPERATORS & SYMBOLS:
+#    ASSIGN (=), PLUS_EQ (+=), MINUS_EQ (-=), STAR_EQ (*=), SLASH_EQ (/=), PERCENT_EQ (%=)
+#    PLUS (+), MINUS (-), STAR (*), SLASH (/), PERCENT (%)
+#    EQ_EQ (==), BANG_EQ (!=), LT (<), GT (>), LT_EQ (<=), GT_EQ (>=)
+#    AND_AND (&&), OR_OR (||)
+#    BANG (!), AMP (&)
+#    PLUSPLUS (++), MINUSMINUS (--)
+#    LPAREN ( ( ), RPAREN ( ) ), L_BRACE ({), R_BRACE (}), L_SQB ([), R_SQB (])
+#    COMMA (,), SEMICOLON (;), COLON (:), ARROW (->)
+#
+#  LITERALS:
+#    INTEGER, FLOAT, IDENTIFIER, BOOLEAN
+#
+#  TYPES:
+#    I32, I64, BOOL, F32, F64
+
+#  GRAMMAR: Version 1.0
+#  This grammar defines my custom programming language syntax.
+
+<Program> ::= { <Declaration> }
+
+<Declaration> ::= <VariableDeclarationStmt>
+                | <FunctionDeclaration>
+
+<VariableDeclaration> ::= [ CONST ] IDENTIFIER COLON <Type> [ ASSIGN ( <Expression> | <InitializerList> ) ] 
+<VariableDeclarationStmt> ::= <VariableDeclaration> SEMICOLON
+
+<InitializerList> ::= L_BRACE [ <InitElements> ] R_BRACE
+    
+
+<InitElements> ::=
+    <InitElement> { COMMA <InitElement> }
+
+<InitElement> ::=
+      <Expression>
+    | <InitializerList>   # nested initializer lists allowed 
+
+<FunctionDeclaration> ::= FN IDENTIFIER LPAREN [ <ParamList> ] RPAREN
+                          [ ARROW <Type> ] <Block>
+
+<ParamList> ::= <Param> { COMMA <Param> }
+<Param>     ::= [ CONST ] IDENTIFIER COLON <Type>
+
+<Statement> ::= <Block>        | <IfStmt> 
+              | <WhileStmt>    | <ForStmt> 
+              | <ReturnStmt>   | <BreakStmt> 
+              | <ContinueStmt> | <VariableDeclarationStmt> 
+              | <ExprStmt>     
+
+<Block> ::= L_BRACE { <Statement> } R_BRACE
+
+<IfStmt> ::= IF [ LPAREN ] <Expression> [ RPAREN ] <Block>
+             [ ELSE <Block> ]
+
+<WhileStmt> ::= WHILE [ LPAREN ] <Expression> [ RPAREN ] <Block>
+
+<ForStmt> ::= FOR LPAREN [ <ForInit> ] SEMICOLON
+               [ <Expression> ] SEMICOLON [ <Expression> ]
+               RPAREN <Block>
+<ForInit> ::= <VariableDeclaration> | <Expression>
+
+<ReturnStmt>   ::= RETURN [ <Expression> ] SEMICOLON
+<BreakStmt>    ::= BREAK SEMICOLON
+<ContinueStmt> ::= CONTINUE SEMICOLON
+<ExprStmt>     ::= <Expression> SEMICOLON
+
+<Expression> ::= <Assignment> | <LogicalOr>
+<AssignmentStmt> ::= <Assignment> SEMICOLON
+<Assignment> ::= <Lvalue> <AssignOp> <Expression>
+
+<Lvalue> ::= IDENTIFIER
+           | STAR <Lvalue>
+           | LPAREN <Lvalue> RPAREN
+
+<AssignOp> ::= ASSIGN | PLUS_EQ | MINUS_EQ
+             | STAR_EQ | SLASH_EQ | PERCENT_EQ
+
+<LogicalOr>  ::= <LogicalAnd> { OR_OR <LogicalAnd> }
+<LogicalAnd> ::= <Equality>  { AND_AND <Equality> }
+
+<Equality>   ::= <Relational> { ( EQ_EQ | BANG_EQ ) <Relational> }
+<Relational> ::= <Additive>   { ( LT | GT | LT_EQ | GT_EQ ) <Additive> }
+
+<Additive>       ::= <Multiplicative> { ( PLUS | MINUS ) <Multiplicative> }
+<Multiplicative> ::= <Unary>          { ( STAR | SLASH | PERCENT ) <Unary> }
+
+<Unary>   ::= <PrefixOp> <Unary> | <Postfix>
+<PrefixOp> ::= PLUS | MINUS | BANG
+             | STAR | AMP | PLUSPLUS | MINUSMINUS
+
+<Postfix> ::= <Primary> { <PostfixOp> }
+<PostfixOp> ::= PLUSPLUS | MINUSMINUS
+               | L_SQB <Expression> R_SQB
+               | LPAREN [ <ArgList> ] RPAREN 
+
+<Primary> ::= INTEGER | FLOAT | BOOLEAN | IDENTIFIER
+            | LPAREN <Expression> RPAREN
+
+<ArgList> ::= (<Expression> | <InitializerList>) { COMMA (<Expression> | <InitializerList>) }
+
+
+<Type>        ::= <TypeAtom> { <Pointer> } { <ArraySuffix> } { <Pointer> }
+
+<TypeAtom>    ::= <BaseType>
+                | LPAREN <Type> RPAREN
+                | <FunctionType>
+
+# function type is an atom so you can parenthesize it when needed
+<FunctionType>  ::= FN LPAREN [ <TypeList> ] RPAREN [ ARROW <Type>]
+
+<TypeList>    ::= <Type> { COMMA <Type> }
+
+# suffixes apply left-to-right to the immediately preceding type
+<ArraySuffix>   ::=  L_SQB [ <ConstExpr> ] R_SQB
+<PointerSuffix> ::=  STAR
+
+BaseType      ::= I32 | I64 | BOOL | F32 | F64 | IDENTIFIER | STR | CHAR
+
+
+<ConstExpr>    ::= <ConstAdd>
+
+<ConstAdd>     ::= <ConstMul> { ( PLUS | MINUS ) <ConstMul> }
+<ConstMul>     ::= <ConstUnary> { ( STAR | SLASH | PERCENT ) <ConstUnary> }
+<ConstUnary>   ::= ( PLUS | MINUS | PLUSPLUS | MINUSMINUS ) <ConstUnary>
+                 | <ConstPostfix>
+<ConstPostfix> ::= <ConstPrimary> { <PostfixOp> }
+<PostfixOp>    ::= PLUSPLUS
+                 | MINUSMINUS
+                 | LBRACKET <ConstExpr> RBRACKET
+<ConstPrimary> ::= INTEGER
+                 | IDENTIFIER       (* must be compile-time constant *)
+                 | LPAREN <ConstExpr> RPAREN
+
+
