@@ -90,7 +90,7 @@ if (hit) {
 }
 ```
 
-Benefits:
+#### Benefits
 - Single hash+lookup per identifier vs many `strncmp` along a keyword list.
 - Pointer equality for later symbol table operations (parser / semantic phases reuse `tok.record`).
 - Metadata lets you attach TokenType or other flags without a separate map.
@@ -115,7 +115,7 @@ AstIdent *make_ident(Token tok) {
 ```
 
 
-Notes:
+#### Notes
 - No additional allocations: parser just threads canonical pointers through AST.
 
 
@@ -182,6 +182,19 @@ typedef struct DenseArenaInterner {
 	int    (*cmp_func)(void*, void*);               // equality wrapper
 } DenseArenaInterner;
 ```
+### InternResult
+- key: canonical, arena-owned representation (e.g., for strings a Slice* whose .ptr is a NUL-terminated char*; for type snapshots a Slice* over the canonical bytes).
+- entry: pointer to Entry carrying metadata and the stable dense index.
+
+### Entry
+- dense_index: 0..N-1 handle; use as an array index in side tables (promotion matrix, attributes, etc.).
+- meta: optional user payload (e.g., TokenType for keywords or flags).
+
+### DenseArenaInterner
+- arena: storage for canonical keys and interner records (stable for the pass).
+- hashmap: deduplicates by content; maps canonical key -> InternResult.
+- dense_array: maps dense_index -> InternResult (in insertion order).
+- copy/hash/cmp: pluggable behavior; ensure cmp examines exactly the bytes hashed and the bytes produced by copy.
 
 ## Core operations
 - `intern_table_create(hashmap, arena, copy_func, hash_func, cmp_func)` – construct.
@@ -193,7 +206,7 @@ typedef struct DenseArenaInterner {
 - `interner_get_cstr(interner, idx)` – convenience for string keys.
 - `intern_table_destroy(interner, free_key, free_value)` – teardown (arena free if desired).
 
-Intern (conceptual) pseudo-code:
+### Intern (conceptual) pseudo-code
 ```c
 InternResult* intern(DenseArenaInterner *I, Slice *s, void *meta) {
 	// 1) Lookup by content
@@ -217,8 +230,7 @@ InternResult* intern(DenseArenaInterner *I, Slice *s, void *meta) {
 	return ir;
 }
 ```
-
-Roles of the function pointers:
+### Function pointer roles
 - `copy_func` – How to make the canonical key (e.g., `string_copy_func` NUL-terminates; `binary_copy_func` copies raw bytes).
 - `hash_func` – Hashing of the key for the HashMap (must match what `cmp_func` compares).
 - `cmp_func` – Equality/ordering for keys (must consider the same bytes `hash_func` used).
