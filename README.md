@@ -100,7 +100,7 @@ fn mul(a: i64, b: i64) -> i64 {
 }
 ```
 
-Tokens (abbrev):
+Tokens:
 ```plaintext
 │   1:1   │ FN            │ 'fn'
 │   1:4   │ IDENTIFIER    │ 'mul'
@@ -125,7 +125,7 @@ Tokens (abbrev):
 │   3:2   │ EOF           │ (no-lexeme)
 ```
 
-AST (pretty print):
+AST:
 ```plaintext
 Program [1:1-3:2]
 └── FunctionDeclaration [1:1-3:2]
