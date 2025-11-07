@@ -1,5 +1,7 @@
 # Lexing
 
+[← Back to docs index](./README.md)
+
 ## On this page
 - [What it is](#what-it-is)
 - [Core data structures](#core-data-structures)
@@ -15,7 +17,7 @@
 The lexer turns raw source text into a stream of tokens with type, text, and source location. It’s a single pass over the input buffer with minimal branching and no per-token heap allocation.
 
 ## Core data structures
-Defined in `include/token.h`:
+Defined in [`include/token.h`](../include/token.h):
 
 ```c
 typedef struct {

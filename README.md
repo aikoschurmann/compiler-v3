@@ -1,9 +1,9 @@
 # Simple Compiler (In progress 🙂)
 
 A small, fast C implementation of a custom programming language.  
-Current pipeline: **File load → Lexing → (Token dump / Lex benchmark optional)**.
+Current pipeline: **File load → Lexing → (Token dump / Lex)**.
 
-This README focuses on the lexer’s design and the performance-minded choices I made — short and practical.
+This README focuses on the lexer’s and parsing design and the performance-minded choices I made — short and practical.
 
 ---
 
@@ -68,3 +68,10 @@ Options:
 - `arena.*` — fast allocator used across lexer + interner
 
 ---
+
+## Documentation
+- Start here: `docs/README.md` (documentation guide and reading order)
+  1. `docs/lexing.md` — tokens, slices, spans, interner integration
+  2. `docs/parsing.md` — AST construction and parser APIs
+  3. `docs/interner.md`, `docs/dynarray.md`, `docs/hashmap.md`, `docs/arena.md` — infrastructure references
+  4. `docs/semantics.md` — planned
