@@ -9,7 +9,7 @@ fn fold(arr: i64[10 + 10], init: i64, f: fn(i64, i64) -> i64) -> i64 {
 }
 
 fn add(a: i64, b: i64) -> i64 {
-    return 1 + 'a';
+    return a + b;
 }
 
 fn mul(a: i64, b: i64) -> i64 {

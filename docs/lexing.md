@@ -31,7 +31,7 @@ typedef struct {
 Notes:
 - `slice` is a view into the source; no copy is made.
 - `span` is used by error printers to render source excerpts.
-- `record` is a pointer to an [interner](interner.md) record:
+- `record` is a pointer to an [internResult](interner.md):
   - For keywords, points into the keyword interner (meta holds TokenType).
   - For identifiers, points into the identifier interner (canonical spelling).
 

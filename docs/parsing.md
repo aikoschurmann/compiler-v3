@@ -14,7 +14,35 @@
 - [Cross references](#cross-references)
 
 ## What it is
-The parser consumes tokens and produces an Abstract Syntax Tree (AST). It’s a recursive‑descent parser using lookahead and arena‑allocated nodes for fast construction and O(1) teardown.
+The parser consumes tokens and produces an Abstract Syntax Tree (AST).
+
+### Recursive‑descent (overview)
+"Recursive‑descent" means: one function per grammar rule, calling other rule functions in a top‑down manner. Control flow follows the shape of the grammar instead of using tables. Each function:
+- Peeks the current token (simple lookahead) and decides which production applies.
+- Consumes the tokens belonging to that production.
+- Allocates and returns an AST node (or NULL on error) from the arena.
+
+Operator precedence is handled by a chain of functions (`parse_logical_or` → ... → `parse_primary`), each responsible for one precedence level and delegating to the next tighter level.
+
+Benefits:
+- Very readable: grammar shape maps directly to call graph.
+- Easy to extend: add a new construct by adding a new parse_* function.
+- Good for hand‑written, mid‑sized languages (< few hundred grammar rules).
+
+Trade‑offs:
+- Left‑recursive grammar rules must be rewritten (we use precedence functions for expressions).
+- More manual error recovery than table‑driven parsers.
+
+### Abstract Syntax Tree (AST)
+The AST is a structured, loss‑filtered representation of the program:
+- Nodes encode semantic categories (declaration, statement, expression, type) rather than raw token spelling.
+- It strips layout trivia (comments/whitespace) but preserves source spans for diagnostics.
+- Identifiers and type names store canonical interner records; pointer equality makes name comparisons O(1).
+- Later phases (type checking, constant folding, code generation) annotate nodes (e.g. fill the `Type*` field, set `is_const_expr`, compute `const_value`).
+
+Why not operate directly on tokens? Tokens are flat; the AST groups them into higher‑level constructs with hierarchy (e.g. a function has params, a body, a return type). This enables semantic passes to walk meaningful structures rather than re‑parsing token sequences.
+
+Allocation: All nodes are arena‑allocated for fast creation and O(1) bulk teardown.
 
 ## Core data structures
 Parser state and errors (from [`include/parser.h`](../include/parser.h)):
