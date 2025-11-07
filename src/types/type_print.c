@@ -59,7 +59,7 @@ void print_type_category_colored(Type *type) {
                         (name_slice->len == 3 && strncmp((char*)name_slice->ptr, "f64", 3) == 0) ||
                         (name_slice->len == 4 && strncmp((char*)name_slice->ptr, "bool", 4) == 0) ||
                         (name_slice->len == 4 && strncmp((char*)name_slice->ptr, "char", 4) == 0) ||
-                        (name_slice->len == 6 && strncmp((char*)name_slice->ptr, "string", 6) == 0)) {
+                        (name_slice->len == 3 && strncmp((char*)name_slice->ptr, "str", 3) == 0)) {
                         printf(BLUE "(primitive)" RESET);
                     } else {
                         printf(YELLOW "(named)" RESET);

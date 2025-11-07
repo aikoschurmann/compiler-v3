@@ -172,15 +172,19 @@ Interned Types:
   [3] f64 (primitive)
   [4] bool (primitive)
   [5] char (primitive)
-  [6] str (named)
+  [6] str (primitive)
   [7] (i64, i64) -> i64 (function)
 
 Function Symbol Mapping:
 
   mul:
+    • Symbol ptr: 0x16000c7a0
+    • Symbol Name Dense Index: [0]
     • Type Index: [7] → (i64, i64) -> i64 (function)
-    • Parameters (2): i64, i64
-    • Return Type: i64
+    • Parameters (2):
+      [0] i64 [1] (primitive)
+      [1] i64 [1] (primitive)
+    • Return Type: [1] → i64 (primitive)
 ```
 
 ---

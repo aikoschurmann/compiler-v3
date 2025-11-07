@@ -414,7 +414,7 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             printf("name: ");
             if (node->data.param.name_idx >= 0 && identifiers) {
                 const char *name = interner_get_cstr(identifiers, node->data.param.name_idx);
-                printf("'%s' (index:%d)", name ? name : "?", node->data.param.name_idx);
+                printf("'%s' (I-index:%d)", name ? name : "?", node->data.param.name_idx);
             } else {
                 printf("(anonymous)");
             }
