@@ -1,22 +1,34 @@
-# Simple Compiler (In progress 🙂)
+# Simple Compiler (Work in progress)
 
-A small, fast C implementation of a custom programming language.  
-Current pipeline: **File load → Lexing → (Token dump / Lex)**.
+A small, fast compiler front‑end written in C. Current pipeline:
+File → Lexing → Parsing → (Type internment preview) → Report
 
-This README focuses on the lexer’s and parsing design and the performance-minded choices I made — short and practical.
+This README gives a practical overview: how to build and run, what’s implemented, where things live, and where to read more.
 
 ---
 
-## Build
+## Quick start
+
+Build:
 ```sh
-make        # builds executable (default target)
+make
+```
+
+Run on the sample input with a useful set of flags:
+```sh
+./out/compiler ./input/test.txt --ast --types --time
+```
+
+Clean:
+```sh
 make clean
 ```
-Requires a POSIX environment (tested on macOS) and a C compiler supporting C11 or later.
+
+Requirements: POSIX environment (tested on macOS) and a C11 (or newer) compiler.
 
 ---
 
-## Running
+## CLI options
 ```
 Usage: ./out/compiler <file> [options]
 Options:
@@ -28,50 +40,162 @@ Options:
   -v, --version   Print version and exit
 ```
 
+---
+
+## What’s implemented
+- Hand‑written lexer (single pass over a character buffer)
+- Token stream stored in a DynArray
+- Dense arena‑backed interner for identifiers/keywords/strings
+- Recursive‑descent parser that builds an arena‑allocated AST
+- Early “type internment” showcase (dense handles and signatures)
+- Pretty benchmarking report (timings, memory, throughput)
 
 ---
 
-## Core components (concise)
-- **Lexer**: single-pass, hand-written scanner over a buffer (`cur` / `end` pointer-based).
-- **Token storage**: `DynArray` (reserves an initial capacity to reduce reallocations).
-- **Interning**: Dense arena-backed interner for identifiers.
-- **Memory**: arena allocator for lexer allocations (fast bulk alloc / free).
-- **Slices**: tokens use `Slice { ptr, len }` pointing into the original source buffer — no `strdup`.
+## Why it’s fast (highlights)
+- Pointer‑based scanning in the lexer; minimal branching.
+- No per‑token heap allocations: tokens hold Slice views into the source.
+- Pre‑interned keywords, and O(1) identifier canonicalization.
+- Arena allocation everywhere for cheap creation and O(1) teardown.
+- Reserved token capacity to avoid frequent resizes.
 
 ---
 
-## Key design & performance choices (why it’s fast)
-- **Pointer-based scanning**: uses `cur`/`end` pointers and pointer arithmetic rather than index-bound checks on every character. Fewer instructions per character.
-- **Single-peek usage**: code peeks the next char exactly when needed (e.g., `++`, `+=`) to minimize branch work and redundant checks.
-- **Advance updates line/col once**: `lexer_advance` increments `pos`, and updates `line`/`col` inline — keeps location bookkeeping cheap and local.
-- **No unnecessary allocations**: tokens store `Slice` referencing the original buffer; identifiers are interned into an arena (no per-identifier malloc), dramatically reducing allocation overhead and fragmentation.
-- **Pre-interned keywords + `intern_peek`**: keywords are pre-populated; `intern_peek` checks keywords without inserting or allocating accidentally, giving O(1) keyword→token mapping without polluting the identifier table.
-- **Reserved token buffer**: `dynarray_reserve(INITIAL_TOKEN_CAPACITY)` reduces costly reallocs for small/medium files.
-- **Arena lifetime semantics**: using an arena allows fast allocation and cheap reset — useful for repeated lexing runs / benchmarks. (later in AST will make freeing very easy instead of needing to do it recursively)
+## Project layout
+```
+.
+├── include/           # Public headers
+├── src/               # Sources (lexer, parser, driver, helpers)
+├── docs/              # Documentation (start at docs/README.md)
+├── input/             # Sample inputs (test.txt)
+├── obj/               # Object files (generated)
+└── out/               # Compiled binary (generated)
+```
+
+Key modules:
+- Lexer: `lexer.*`
+- Parser: `parser.*`, `parse_statements.*`, `ast.*`
+- Interner: `dense_arena_interner.*`
+- Containers: `dynamic_array.*`, `hash_map.*`
+- Memory: `arena.*`
+- CLI/metrics: `cli.*`, `metrics.*`
+- Types (preview): `type.*`, `scope.*`, `type_print.*`, `type_report.*`
 
 ---
 
-## Behavioural notes & trade-offs
-- **Slices point into the source buffer**: the source must remain valid as long as tokens are used. This avoids copies but couples lifetime management (Thats why we intern keywords).
-- **Interners survive `lexer_reset`**: `lexer_reset` reuses keywords and previously interned identifiers to reduce noise; intern tables are not cleared on reset.
-- **Limited parsing of literals**: number parsing handles basic ints/floats (no exponents or hex yet). String/char handling supports escapes but does not perform full validation or normalization.
-- **ASCII-focused**: character classification uses `ctype` and treats `_` as alpha — Unicode identifier support is not implemented.
-- **Error reporting**: lexer returns `TOK_UNKNOWN` for some malformed inputs (e.g., unterminated string/char) — error messaging is minimal by design so far.
+## Compilation pipeline (at a glance)
+1) Read file into memory.
+2) Lex: produce tokens with Slice+Span and an InternResult* for identifiers.
+3) Parse: build an AST (arena‑allocated, spans preserved, canonical identifiers).
+4) Types (preview): intern and print type signatures/dense indices.
+5) Report: optional timing and memory summary.
 
 ---
 
+## Pipeline example
+Input (`input/test.txt`):
+```plaintext
+fn mul(a: i64, b: i64) -> i64 {
+    return a * b;
+}
+```
 
-## Where to look in the code
-- `lexer.c` — pointer scanning, token emission, whitespace/comment skipping
-- `dense_arena_interner.*` — interning strategy and metadata usage (keywords store `TokenType` in `meta`)
-- `dynamic_array.*` — token storage
-- `arena.*` — fast allocator used across lexer + interner
+Tokens (abbrev):
+```plaintext
+│   1:1   │ FN            │ 'fn'
+│   1:4   │ IDENTIFIER    │ 'mul'
+│   1:7   │ LPAREN        │ '('
+│   1:8   │ IDENTIFIER    │ 'a'
+│   1:9   │ COLON         │ ':'
+│   1:11  │ I64           │ 'i64'
+│   1:14  │ COMMA         │ ','
+│   1:16  │ IDENTIFIER    │ 'b'
+│   1:17  │ COLON         │ ':'
+│   1:19  │ I64           │ 'i64'
+│   1:22  │ RPAREN        │ ')'
+│   1:24  │ ARROW         │ '->'
+│   1:27  │ I64           │ 'i64'
+│   1:31  │ LBRACE        │ '{'
+│   2:5   │ RETURN        │ 'return'
+│   2:12  │ IDENTIFIER    │ 'a'
+│   2:14  │ STAR          │ '*'
+│   2:16  │ IDENTIFIER    │ 'b'
+│   2:17  │ SEMICOLON     │ ';'
+│   3:1   │ RBRACE        │ '}'
+│   3:2   │ EOF           │ (no-lexeme)
+```
+
+AST (pretty print):
+```plaintext
+Program [1:1-3:2]
+└── FunctionDeclaration [1:1-3:2]
+│   ├── name: 'mul' (I-index:0)
+│   ├── return_type:
+│   │   ├── Type
+│   │   │   ├── kind: NamedType [1:27-1:30]
+│   │   │   └── type_name: 'i64' (K-index:10)
+│   ├── parameters:
+│   │   ├── Parameter [1:8-1:14]
+│   │   │   ├── name: 'a' (index:1)
+│   │   │   └── type:
+│   │   │   │   └── Type
+│   │   │   │   │   ├── kind: NamedType [1:11-1:14]
+│   │   │   │   │   └── type_name: 'i64' (K-index:10)
+│   │   └── Parameter [1:16-1:22]
+│   │   │   ├── name: 'b' (index:2)
+│   │   │   └── type:
+│   │   │   │   └── Type
+│   │   │   │   │   ├── kind: NamedType [1:19-1:22]
+│   │   │   │   │   └── type_name: 'i64' (K-index:10)
+│   └── body:
+│   │   └── Block [1:31-3:2]
+│   │   │   └── ReturnStatement [2:5-2:18]
+│   │   │   │   └── expression:
+│   │   │   │   │   └── BinaryExpression [2:12-2:17]
+│   │   │   │   │   │   ├── operator: '*'
+│   │   │   │   │   │   ├── left:
+│   │   │   │   │   │   │   ├── Identifier [2:12-2:13]
+│   │   │   │   │   │   │   │   └── name: 'a' (I-index:1)
+│   │   │   │   │   │   └── right:
+│   │   │   │   │   │   │   └── Identifier [2:16-2:17]
+│   │   │   │   │   │   │   │   └── name: 'b' (I-index:2)
+```
+
+Type internment (dense handles):
+```plaintext
+Total types interned: 8
+
+Interned Types:
+  [0] i32 (primitive)
+  [1] i64 (primitive)
+  [2] f32 (primitive)
+  [3] f64 (primitive)
+  [4] bool (primitive)
+  [5] char (primitive)
+  [6] str (named)
+  [7] (i64, i64) -> i64 (function)
+
+Function Symbol Mapping:
+
+  mul:
+    • Type Index: [7] → (i64, i64) -> i64 (function)
+    • Parameters (2): i64, i64
+    • Return Type: i64
+```
 
 ---
 
 ## Documentation
-- Start here: `docs/README.md` (documentation guide and reading order)
-  1. `docs/lexing.md` — tokens, slices, spans, interner integration
-  2. `docs/parsing.md` — AST construction and parser APIs
-  3. `docs/interner.md`, `docs/dynarray.md`, `docs/hashmap.md`, `docs/arena.md` — infrastructure references
-  4. `docs/semantics.md` — planned
+Start at the docs index: `docs/README.md`
+- `docs/lexing.md` — tokens, slices, spans, interner integration
+- `docs/parsing.md` — recursive‑descent parser and AST shapes
+- Infra references: `docs/interner.md`, `docs/dynarray.md`, `docs/hashmap.md`, `docs/arena.md`
+- `docs/semantics.md` — planned
+
+---
+
+## Notes & trade‑offs
+- Slices reference the original buffer; keep it alive while tokens/AST live.
+- Grammar uses precedence functions for expressions (no left recursion).
+- Error messages are improving; spans are preserved for good diagnostics.
+

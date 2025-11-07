@@ -1,25 +1,3 @@
-fn fold(arr: i64[10 + 10], init: i64, f: fn(i64, i64) -> i64) -> i64 {
-    result: i64 = init;
-    i: i64 = len(arr) - 1;
-    while i >= 0 {
-        result = f(result, arr[i]);
-        i--;
-    }
-    return result;
-}
-
-fn add(a: i64, b: i64) -> i64 {
-    return a + b;
-}
-
 fn mul(a: i64, b: i64) -> i64 {
     return a * b;
-}
-
-fn sum(arr: i64[]) -> i64 {
-    return fold(arr, 0, add);
-}
-
-fn product(arr: i64[]) -> i64 {
-    return fold(arr, 1, mul);
 }
