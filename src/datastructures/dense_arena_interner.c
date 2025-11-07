@@ -102,7 +102,7 @@ InternResult* intern(DenseArenaInterner *interner,
     /* Push pointer to InternResult* into dense array */
     InternResult *res_ptr = res;
     if (dynarray_push_value(interner->dense_array, &res_ptr) != 0) {
-        /* push failed; can't free arena allocations, return error */
+        /* push failed; can't free arena allocations, return error. */
         return NULL;
     }
 
@@ -140,19 +140,24 @@ int intern_or_get_idx(DenseArenaInterner *I, Slice *s, void *meta) {
 
 /* Return canonical C string for a dense index (for printing). Returns NULL for invalid idx. */
 const char *interner_get_cstr(DenseArenaInterner *I, int idx) {
+    // Sanity checks
     if (!I) return NULL;
     if (idx < 0 || idx >= I->dense_index_count) return NULL;
     if (!I->dense_array) return NULL;
 
+    // Bounds check
     size_t count = I->dense_array->count;
     if ((size_t)idx >= count) return NULL;
 
+    // get the InternResult* at dense index
     void *elem_ptr = dynarray_get(I->dense_array, (size_t)idx);
     if (!elem_ptr) return NULL;
 
+    // cast to InternResult*
     InternResult *res = *(InternResult **)elem_ptr;
     if (!res || !res->key) return NULL;
 
+    // Extract pointer to in arena-allocated Slice
     Slice *ks = (Slice *)res->key;
     return ks->ptr;
 }
