@@ -1,4 +1,7 @@
 # Dense Arena Interner
+
+[← Back to docs index](./README.md)
+
 ## On this page
 - [What it is](#what-it-is)
 - [Why use it](#why-use-it)

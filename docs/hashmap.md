@@ -1,5 +1,7 @@
 # HashMap
 
+[← Back to docs index](./README.md)
+
 ## What it is
 A separate-chaining hash map backed by dynamic arrays:
 - `bucket_count` buckets; each bucket is a `DynArray` of `KeyValue` pairs.

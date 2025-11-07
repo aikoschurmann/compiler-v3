@@ -1,5 +1,7 @@
 # DynArray
 
+[← Back to docs index](./README.md)
+
 ## What it is
 Generic resizable array (vector) for fixed-size elements. Supports two allocation modes:
 - Heap-backed (default): internal buffer grown via realloc.

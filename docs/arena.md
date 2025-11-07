@@ -1,5 +1,7 @@
 # Arena allocator
 
+[← Back to docs index](./README.md)
+
 ## What it is
 A simple bump allocator:
 - One contiguous memory region (or a chain of blocks).
