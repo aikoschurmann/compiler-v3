@@ -378,30 +378,33 @@ Type *resolve_function_declaration(TypeChecker *tc, AstNode *ast_func_decl) {
     Type proto = {0};
     proto.kind = TY_FUNC;
 
-    // Resolve parameter types
-    size_t param_count = ast_decl->params->count;
+    // Resolve parameter types (support NULL or empty parameter lists)
+    size_t param_count = ast_decl->params ? ast_decl->params->count : 0;
     proto.u.func.param_count = param_count;
-    
-    proto.u.func.params = arena_alloc(tc->arena, sizeof(Type*) * param_count);
-    if (!proto.u.func.params) {
-        return NULL;
-    }
 
-    for (size_t i = 0; i < param_count; ++i) {
-        AstNode *param = *(AstNode**)dynarray_get(ast_decl->params, i);
-        
-        if (!param || param->node_type != AST_PARAM) {
+    if (param_count > 0) {
+        proto.u.func.params = arena_alloc(tc->arena, sizeof(Type*) * param_count);
+        if (!proto.u.func.params) {
             return NULL;
         }
-        
-        // Get the type node from the parameter
-        AstParam *ast_param = &param->data.param;
-        
-        Type *param_type = resolve_ast_type(tc, ast_param->type);
-        if (!param_type) {
-            return NULL;
+
+        for (size_t i = 0; i < param_count; ++i) {
+            AstNode *param = *(AstNode**)dynarray_get(ast_decl->params, i);
+            if (!param || param->node_type != AST_PARAM) {
+                return NULL;
+            }
+
+            // Get the type node from the parameter
+            AstParam *ast_param = &param->data.param;
+
+            Type *param_type = resolve_ast_type(tc, ast_param->type);
+            if (!param_type) {
+                return NULL;
+            }
+            proto.u.func.params[i] = param_type;
         }
-        proto.u.func.params[i] = param_type;
+    } else {
+        proto.u.func.params = NULL;
     }
 
     // Resolve return type
@@ -446,22 +449,15 @@ int intern_function_types(TypeChecker *tc, Scope *scope, AstNode *program, TypeE
                 return -1;
             }
 
-            // Intern the function type to get canonical version (now returns InternResult*)
-            InternResult *cres = intern_type(tc, func_type);
-            if (!cres) {
-                if (err) create_type_error(err, tc->arena, "failed to intern function type", NULL, tc->filename);
-                return -1;
-            }
-            Type *canonical = (Type*)((Slice*)cres->key)->ptr;
-
-            // Store the canonical type in the AST
-            func_decl->type = canonical;
+            // resolve_function_declaration already returns the canonical Type*;
+            // avoid redundant re-interning and assign directly.
+            func_decl->type = func_type;
 
         // Add function to scope
-        Symbol *symbol_result = scope_define_symbol(scope, 
-                                                   func_decl->data.function_declaration.name_rec, 
-                                                   canonical, 
-                                                   SYMBOL_VALUE_FUNCTION);
+    Symbol *symbol_result = scope_define_symbol(scope, 
+                           func_decl->data.function_declaration.name_rec, 
+                           func_type, 
+                           SYMBOL_VALUE_FUNCTION);
         if (!symbol_result) {
             return -1;
         }
