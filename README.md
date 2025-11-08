@@ -163,7 +163,7 @@ Program [1:1-3:2]
 
 Type internment (dense handles):
 ```plaintext
-Total types interned: 8
+Total types interned: 9
 
 Interned Types:
   [0] i32 (primitive)
@@ -173,17 +173,25 @@ Interned Types:
   [4] bool (primitive)
   [5] char (primitive)
   [6] str (primitive)
-  [7] (i64, i64) -> i64 (function)
+  [7] () -> NULL (function)
+  [8] (i64, i64) -> i64 (function)
 
 Function Symbol Mapping:
 
-  mul:
-    • Symbol ptr: 0x16000c7a0
+  test:
+    • Symbol ptr: 0x14800c7a0
     • Symbol Name Dense Index: [0]
-    • Type Index: [7] → (i64, i64) -> i64 (function)
+    • Type Index: [7] () -> NULL (function)
+    • Parameters (0):
+    • Return Type: none
+
+  mul:
+    • Symbol ptr: 0x14800c818
+    • Symbol Name Dense Index: [1]
+    • Type Index: [8] (i64, i64) -> i64 (function)
     • Parameters (2):
-      [0] i64 [1] (primitive)
-      [1] i64 [1] (primitive)
+       [1] i64 (primitive)
+       [1] i64 (primitive)
     • Return Type: [1] → i64 (primitive)
 ```
 

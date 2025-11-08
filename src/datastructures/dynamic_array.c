@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 
-/* Standard heap-backed init (existing semantics) */
+/* Standard heap-backed init  */
 void dynarray_init(DynArray *da, size_t elem_size) {
     if (!da) return;
     da->data = NULL;
