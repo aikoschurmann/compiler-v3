@@ -28,13 +28,13 @@ typedef enum {
 } TypeKind;
 
 // Declare type_handles
-int INT32_TYPE_HANDLE;
-int INT64_TYPE_HANDLE;
-int FLOAT32_TYPE_HANDLE;
-int FLOAT64_TYPE_HANDLE;
-int BOOL_TYPE_HANDLE;
-int CHAR_TYPE_HANDLE;
-int STRING_TYPE_HANDLE;
+extern int INT32_TYPE_HANDLE;
+extern int INT64_TYPE_HANDLE;
+extern int FLOAT32_TYPE_HANDLE;
+extern int FLOAT64_TYPE_HANDLE;
+extern int BOOL_TYPE_HANDLE;
+extern int CHAR_TYPE_HANDLE;
+extern int STRING_TYPE_HANDLE;
 
 // Canonical primitive Type* pointers (set during intern_type_handles)
 extern struct Type *INT32_TYPE_PTR;

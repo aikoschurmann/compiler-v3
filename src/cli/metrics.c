@@ -124,10 +124,10 @@ void print_benchmark_stats(const char *filename,
 long get_peak_rss_kb(void) {
     struct rusage ru; if (getrusage(RUSAGE_SELF, &ru) != 0) return -1; return (long)(ru.ru_maxrss / 1024);
 }
+
 #else
-#include <sys/resource.h>
 long get_peak_rss_kb(void) {
-    struct rusage ru; if (getrusage(RUSAGE_SELF, &ru) != 0) return -1; return (long)ru.ru_maxrss;
+    return -1; // Not implemented on this platform
 }
 #endif
 

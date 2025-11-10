@@ -21,6 +21,14 @@ Type *BOOL_TYPE_PTR = NULL;
 Type *CHAR_TYPE_PTR = NULL;
 Type *STRING_TYPE_PTR = NULL;
 
+int INT32_TYPE_HANDLE;
+int INT64_TYPE_HANDLE;
+int FLOAT32_TYPE_HANDLE;
+int FLOAT64_TYPE_HANDLE;
+int BOOL_TYPE_HANDLE;
+int CHAR_TYPE_HANDLE;
+int STRING_TYPE_HANDLE;
+
 // Hash utility functions
 uint64_t hash64(uint64_t x) {
     x ^= x >> 33;
