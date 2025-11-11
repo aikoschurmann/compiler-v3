@@ -29,6 +29,8 @@ int BOOL_TYPE_HANDLE;
 int CHAR_TYPE_HANDLE;
 int STRING_TYPE_HANDLE;
 
+int promotion_matrix[NUM_TYPE_KINDS][NUM_TYPE_KINDS];
+
 // Hash utility functions
 uint64_t hash64(uint64_t x) {
     x ^= x >> 33;

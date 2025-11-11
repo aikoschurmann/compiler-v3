@@ -46,7 +46,7 @@ extern struct Type *CHAR_TYPE_PTR;
 extern struct Type *STRING_TYPE_PTR;
 
 // 2D int promotion array
-int promotion_matrix[NUM_TYPE_KINDS][NUM_TYPE_KINDS];
+extern int promotion_matrix[NUM_TYPE_KINDS][NUM_TYPE_KINDS];
 
 
 typedef struct Type {
