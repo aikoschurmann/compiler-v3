@@ -41,17 +41,18 @@ void print_benchmark_stats(const char *filename,
                            size_t token_count,
                            double tokenization_time,
                            double parsing_time,
+                           double semantics_time,
                            size_t arena_used_lex,
                            size_t arena_used_parse,
+                           size_t arena_used_sema,
                            long peak_rss_before_kb,
                            long peak_rss_after_kb) {
-    double type_inference_time = 0.0;
-    double total_time = tokenization_time + parsing_time + type_inference_time;
-    size_t arena_total_allocated = arena_used_lex + arena_used_parse;
+    double total_time = tokenization_time + parsing_time + semantics_time;
+    size_t arena_total_allocated = arena_used_lex + arena_used_parse + arena_used_sema;
     size_t rss_total = (peak_rss_after_kb - peak_rss_before_kb) * 1024;
     size_t tokens_second = tokenization_time > 0 ? (size_t)(token_count / tokenization_time) : 0;
 
-    double max_time = fmax(fmax(tokenization_time, parsing_time), type_inference_time);
+    double max_time = fmax(fmax(tokenization_time, parsing_time), semantics_time);
     if (max_time <= 0) max_time = total_time;
 
     char arena_size_str[32], rss_str[32];
@@ -72,7 +73,7 @@ void print_benchmark_stats(const char *filename,
     char tokenization_str[32], parsing_str[32], inference_str[32], total_str[32];
     human_readable_time(tokenization_time, tokenization_str, sizeof(tokenization_str));
     human_readable_time(parsing_time, parsing_str, sizeof(parsing_str));
-    human_readable_time(type_inference_time, inference_str, sizeof(inference_str));
+    human_readable_time(semantics_time, inference_str, sizeof(inference_str));
     human_readable_time(total_time, total_str, sizeof(total_str));
 
     double tokenization_ns_per_token = token_count > 0 ? (tokenization_time * 1e9) / token_count : 0.0;
@@ -85,6 +86,11 @@ void print_benchmark_stats(const char *filename,
     print_progress_bar(parsing_time, total_time, 16);
     printf(" │ %9.1f%% │ %9.1f  │\n", (parsing_time / total_time) * 100, parsing_ns_per_token);
 
+    double inference_ns_per_token = token_count > 0 ? (semantics_time * 1e9) / token_count : 0.0;
+    printf("│ %-15s │ %8s │ ", "Semantics", inference_str);
+    print_progress_bar(semantics_time, total_time, 16);
+    printf(" │ %9.1f%% │ %9.1f  │\n", (semantics_time / total_time) * 100, inference_ns_per_token);
+
     printf("└─────────────────┴──────────┴──────────────────┴────────────┴────────────┘\n");
     printf("\n");
 
@@ -95,14 +101,17 @@ void print_benchmark_stats(const char *filename,
 
     double lex_bytes_per_token = token_count > 0 ? (double)arena_used_lex / token_count : 0.0;
     double parse_bytes_per_token = token_count > 0 ? (double)arena_used_parse / token_count : 0.0;
+    double sema_bytes_per_token = token_count > 0 ? (double)arena_used_sema / token_count : 0.0;
     double total_bytes_per_token = token_count > 0 ? (double)arena_total_allocated / token_count : 0.0;
 
-    char lex_arena_str[32], parse_arena_str[32];
+    char lex_arena_str[32], parse_arena_str[32], sema_arena_str[32];
     human_readable_bytes(arena_used_lex, lex_arena_str, sizeof(lex_arena_str));
     human_readable_bytes(arena_used_parse, parse_arena_str, sizeof(parse_arena_str));
+    human_readable_bytes(arena_used_sema, sema_arena_str, sizeof(sema_arena_str));
 
     printf("│ %-20s │ %11s │ %10.1f B │\n", "Arena (Lexing)", lex_arena_str, lex_bytes_per_token);
     printf("│ %-20s │ %11s │ %10.1f B │\n", "Arena (Parsing)", parse_arena_str, parse_bytes_per_token);
+    printf("│ %-20s │ %11s │ %10.1f B │\n", "Arena (Semantics)", sema_arena_str, sema_bytes_per_token);
     printf("│ %-20s │ %11s │ %10.1f B │\n", "Arena Total", arena_size_str, total_bytes_per_token);
     printf("│ %-20s │ %11s │ %-12s │\n", "RSS Delta", rss_str, "");
 

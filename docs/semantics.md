@@ -88,6 +88,7 @@ The resolver switches on the `AstType` kind:
 1.  **Primitive / Named Types** (`AST_TYPE_PRIMITIVE`): 
     *   The most common case. The AST has an `InternResult` for the name (e.g., "i32" or "MyStruct").
     *   **Registry Check**: First, we check if the name's key pointer exists in `store->primitive_registry`. If so, we return the primitive type immediately.
+        > **Note**: This means primitive types (like `i32` or `u8`) take precedence over user-defined types. You cannot shadow a primitive type name with a struct or typedef.
     *   **Scope Lookup**: If not in the registry, we call `scope_lookup_symbol(scope, name)` to find user-defined types (structs/typedefs) in the scope chain.
 
 2.  **Pointer Types** (`AST_TYPE_PTR`):
@@ -112,7 +113,7 @@ The `TypeStore` ensures that types are **canonical**.
 
 ```c
 // Example: Resolving "i32*"
-// 1. Resolve "i32" -> t_i32 (via Scope lookup)
+// 1. Resolve "i32" -> t_i32 (via Registry lookup)
 // 2. Construct Type{ .kind = TYPE_POINTER, .base = t_i32 }
 // 3. Intern(new_type) -> return canonical pointer
 ```

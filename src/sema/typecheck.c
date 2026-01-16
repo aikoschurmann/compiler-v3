@@ -184,7 +184,7 @@ static void resolve_function_decl(TypeStore *store, Scope *scope, AstNode *func_
  *
  * Does NOT check function bodies yet; only signatures and global variable types.
  */
-void resolve_program_types(TypeStore *store, AstProgram *program, DenseArenaInterner *identifiers, DenseArenaInterner *keywords) {
+void resolve_program_functions(TypeStore *store, AstProgram *program, DenseArenaInterner *identifiers, DenseArenaInterner *keywords) {
     if (!store || !program || !program->decls) return;
 
     // Create Global Scope (root) using IDENTIFIERS
@@ -206,15 +206,15 @@ void resolve_program_types(TypeStore *store, AstProgram *program, DenseArenaInte
                  scope_define_symbol(global_scope, func->intern_result, decl->type, SYMBOL_VALUE_FUNCTION);
              }
         }
-        else if (decl->node_type == AST_VARIABLE_DECLARATION) {
-             AstVariableDeclaration *var = &decl->data.variable_declaration;
-             if (var->type) {
-                 decl->type = resolve_ast_type(store, global_scope, var->type);
-             }
-             
-             if (var->intern_result && decl->type) {
-                 scope_define_symbol(global_scope, var->intern_result, decl->type, SYMBOL_VARIABLE);
-             }
-        }
+        //else if (decl->node_type == AST_VARIABLE_DECLARATION) {
+        //     AstVariableDeclaration *var = &decl->data.variable_declaration;
+        //     if (var->type) {
+        //         decl->type = resolve_ast_type(store, global_scope, var->type);
+        //     }
+        //     
+        //     if (var->intern_result && decl->type) {
+        //         scope_define_symbol(global_scope, var->intern_result, decl->type, SYMBOL_VARIABLE);
+        //     }
+        //}
     }
 }

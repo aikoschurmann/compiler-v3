@@ -113,12 +113,17 @@ int main(int argc, char **argv) {
     /* ---------------------------------------------------------
      * Semantic Analysis (Type Resolution)
      * --------------------------------------------------------- */
+    size_t arena_used_sema_start = arena_total_allocated(arena);
+    double t4 = now_seconds();
+    
     TypeStore *store = typestore_create(arena, lexer->identifiers, lexer->keywords);
     
     // Resolve all types in the AST
     if (program) {
-        resolve_program_types(store, (AstProgram*)&program->data.program, lexer->identifiers, lexer->keywords);
+        resolve_program_functions(store, (AstProgram*)&program->data.program, lexer->identifiers, lexer->keywords);
     }
+    double t5 = now_seconds();
+    size_t arena_used_sema = arena_total_allocated(arena) - arena_used_sema_start;
 
     if (opts.print_types) {
         type_print_store_dump(store, program);
@@ -133,8 +138,10 @@ int main(int argc, char **argv) {
                               token_count,
                               t1 - t0,   // lex_time
                               t3 - t2,   // parse_time
+                              t5 - t4,   // sema_time
                               arena_used_lex,
                               arena_used_parse,
+                              arena_used_sema,
                               peak_rss_before_kb,
                               peak_rss_after_kb);
     }

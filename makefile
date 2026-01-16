@@ -91,7 +91,7 @@ clean:
 
 # Run the compiled program (default run)
 run: all
-	./$(OUT_DIR)/$(NAME) ./input/test.txt --types --ast --tokens
+	./$(OUT_DIR)/$(NAME) ./input/test.txt --types --ast --tokens --time
 
 bench: all
 	./$(OUT_DIR)/$(NAME) ./input/test.txt 

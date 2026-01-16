@@ -8,8 +8,10 @@ void print_benchmark_stats(const char *filename,
                            size_t token_count,
                            double tokenization_time,
                            double parsing_time,
+                           double semantics_time,
                            size_t arena_used_lex,
                            size_t arena_used_parse,
+                           size_t arena_used_sema,
                            long peak_rss_before_kb,
                            long peak_rss_after_kb);
 

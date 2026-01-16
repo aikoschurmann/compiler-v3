@@ -81,7 +81,7 @@ typedef struct {
   AstNode *type;           /* AST_TYPE */
 } AstParam;
 
-typedef enum { AST_TYPE_NAME, AST_TYPE_PTR, AST_TYPE_ARRAY, AST_TYPE_FUNC } AstTypeKind;
+typedef enum { AST_TYPE_PRIMITIVE, AST_TYPE_PTR, AST_TYPE_ARRAY, AST_TYPE_FUNC } AstTypeKind;
 typedef struct AstType {
   AstTypeKind kind;
   Span span;
