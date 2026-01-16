@@ -1,23 +1,12 @@
 #include "parse_statements.h"
 #include "parser.h"
 #include "dynamic_array.h"
-#include "utils.h"
-#include <stdio.h>  // for debug prints
 #include "lexer.h"
 #include "ast.h"
-#include <ctype.h>
 #include <limits.h>
 #include <errno.h>
-#include <stdlib.h>
-#include <string.h>
+#include <math.h>
 
-/*
- * Refactored parse_statements.c
- * - helper utilities to reduce repetition
- * - clearer error handling and span updates
- * - small performance & readability improvements
- * - keeps unimplemented features as explicit parse errors
- */
 
 /* Helper: create AST node or set OOM parse error */
 static AstNode *new_node_or_err(Parser *p, AstNodeType kind, ParseError *err, const char *oom_msg) {
@@ -29,9 +18,7 @@ static AstNode *new_node_or_err(Parser *p, AstNodeType kind, ParseError *err, co
 }
 
 
-#include <limits.h>
-#include <stdint.h>
-#include <stdbool.h>
+
 
 static inline bool parse_int_lit(const char *s, size_t len, long long *out) {
     uint64_t val = 0;
@@ -55,8 +42,7 @@ static inline bool parse_int_lit(const char *s, size_t len, long long *out) {
 }
 
 
-#include <math.h>
-#include <stdbool.h>
+
 
 static inline bool parse_float_lit(const char *s, size_t len, double *out) {
     double val = 0.0;
@@ -244,7 +230,7 @@ AstNode *parse_variable_declaration(Parser *p, ParseError *err) {
         if (err) create_parse_error(err, p, "expected identifier in variable declaration", current_token(p));
         return NULL;
     }
-    declaration->data.variable_declaration.name_rec = name_tok->record;
+    declaration->data.variable_declaration.intern_result = name_tok->record;
 
     /* ensure span covers the identifier (and 'const' if present) */
     if (declaration->span.start_line == 0) declaration->span = name_tok->span;
@@ -304,7 +290,7 @@ AstNode *parse_function_declaration(Parser *p, ParseError *err) {
     /* name */
     Token *name_tok = consume(p, TOK_IDENTIFIER);
     if (!name_tok) { create_parse_error(err, p, "expected function name", current_token(p)); return NULL; }
-    func_decl->data.function_declaration.name_rec = name_tok->record;
+    func_decl->data.function_declaration.intern_result = name_tok->record;
 
     /* parameters */
     if (!consume(p, TOK_LPAREN)) { create_parse_error(err, p, "expected '(' after function name", current_token(p)); return NULL; }
@@ -437,9 +423,9 @@ AstNode *parse_type_atom(Parser *p, ParseError *err) {
     AstNode *type_node = new_node_or_err(p, AST_TYPE, err, "out of memory creating type node");
     if (!type_node) return NULL;
 
-    type_node->data.ast_type.kind = AST_TYPE_NAME;
+    type_node->data.ast_type.kind = AST_TYPE_PRIMITIVE;
     type_node->data.ast_type.span = tok->span;
-    type_node->data.ast_type.u.base.rec = base_type;
+    type_node->data.ast_type.u.base.intern_result = base_type;
     return type_node;
 }
 
@@ -827,14 +813,13 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
             if (!literal) return NULL;
 
             literal->data.literal.type = get_literal_type(token->type);
-            literal->data.literal.value.kind = get_literal_value_kind(token->type);
             
             
             switch (token->type) {
                 case TOK_INT_LIT: {
                     long long v;
                     if (parse_int_lit(token->slice.ptr, token->slice.len, &v)) {
-                        literal->data.literal.value.v.int_val = v;
+                        literal->data.literal.value.int_val = v;
                     } else {
                         create_parse_error(err, p, "invalid integer literal or overflow", token);
                         return NULL;
@@ -844,7 +829,7 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
                 case TOK_FLOAT_LIT: {
                     double v;
                     if (parse_float_lit(token->slice.ptr, token->slice.len, &v)) {
-                        literal->data.literal.value.v.float_val = v;
+                        literal->data.literal.value.float_val = v;
                     } else {
                         create_parse_error(err, p, "invalid float literal or overflow", token);
                         return NULL;
@@ -852,22 +837,22 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
                     break;
                 }
                 case TOK_TRUE:
-                    literal->data.literal.value.v.bool_val = 1;
+                    literal->data.literal.value.bool_val = 1;
                     break;
                 case TOK_FALSE:
-                    literal->data.literal.value.v.bool_val = 0;
+                    literal->data.literal.value.bool_val = 0;
                     break;
                 case TOK_CHAR_LIT:
                     // Use the unescaped character from the token's record field
-                    literal->data.literal.value.v.char_val = (char)(uintptr_t)token->record;
+                    literal->data.literal.value.char_val = (char)(uintptr_t)token->record;
                     break;
                 case TOK_STRING_LIT:
                     // Use the interned string from the token
-                    literal->data.literal.value.v.string_val = token->record;
+                    literal->data.literal.value.string_val = token->record;
                     break;
                 default:
                     /* For other types, set default values */
-                    literal->data.literal.value.v.int_val = 0;
+                    literal->data.literal.value.int_val = 0;
                     break;
             }   
 
@@ -882,7 +867,7 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
         case TOK_IDENTIFIER: {
             AstNode *identifier = new_node_or_err(p, AST_IDENTIFIER, err, "out of memory creating identifier node");
             if (!identifier) return NULL;
-            identifier->data.identifier.name_rec = token->record;
+            identifier->data.identifier.intern_result = token->record;
             identifier->span = token->span;
             consume(p, TOK_IDENTIFIER);
             return identifier;

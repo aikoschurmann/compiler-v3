@@ -11,13 +11,12 @@
 #include "ast.h"
 #include "arena.h"
 
-#include "type.h"
+
 #include "scope.h"
 
 #include "cli.h"
 #include "metrics.h"
-#include "type_print.h"
-#include "type_report.h"
+
 
 #define EXIT_USAGE 1
 #define EXIT_IO    2
@@ -108,55 +107,6 @@ int main(int argc, char **argv) {
 
     if (opts.print_ast && program) {
         print_ast(program, 0, lexer->keywords, lexer->identifiers, lexer->strings);
-    }
-
-    TypeChecker *tc = typecheck_create(arena, filename_in_arena);
-
-    if (!tc) {
-        fprintf(stderr, "Failed to create type checker\n");
-        parser_free(parser);
-        lexer_destroy(lexer);
-        arena_destroy(arena);
-        free(src);
-        return EXIT_TYPE;
-    }
-
-    Scope *scope = scope_create(arena, NULL, lexer->identifiers->dense_index_count);
-    if (!scope) {
-        fprintf(stderr, "Failed to create scope\n");
-        parser_free(parser);
-        lexer_destroy(lexer);
-        arena_destroy(arena);
-        free(src);
-        return EXIT_SCOPE;
-    }   
-
-    int res = intern_type_handles(tc, lexer->keywords);
-    TypeError terr = {0};
-    int result = intern_function_types(tc, scope, program, &terr);
-    init_promotion_matrix();
-
-
-    // print promotion matrix for debugging
-    //for (int i = 0; i < NUM_TYPE_KINDS; i++) {
-    //    for (int j = 0; j < NUM_TYPE_KINDS; j++) {
-    //        printf("%2d ", promotion_matrix[i][j]);
-    //    }
-    //    printf("\n");
-    //}
-
-    if (result != 0) {
-        fprintf(stderr, "Type internment failed\n");
-        print_type_error(&terr);
-        parser_free(parser);
-        lexer_destroy(lexer);
-        arena_destroy(arena);
-        free(src);
-        return EXIT_TYPE;
-    }
-
-    if (opts.print_types) {
-        print_clean_type_internment_results(tc, program);
     }
 
     long peak_rss_after_kb = get_peak_rss_kb();

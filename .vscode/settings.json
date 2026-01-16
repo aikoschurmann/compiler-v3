@@ -28,7 +28,8 @@
         "string_view": "c",
         "parse_statements.h": "c",
         "scope.h": "c",
-        "metrics.h": "c"
+        "metrics.h": "c",
+        "file.h": "c"
     },
     "C_Cpp.default.compilerPath": "/usr/bin/gcc"
 }

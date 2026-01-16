@@ -7,7 +7,7 @@ OBJ_DIR := obj
 CC := gcc
 
 # Base flags (no LTO by default)
-CFLAGS_BASE := -Iinclude -MMD -MP -g -O3
+CFLAGS_BASE := -Iinclude -Iinclude/cli -Iinclude/core -Iinclude/datastructures -Iinclude/lexing -Iinclude/parsing -Iinclude/sema -Iinclude/types -MMD -MP -g -O3
 LDFLAGS_BASE := -lm
 
 # Allow SANITIZE to be passed on the command line: e.g. make SANITIZE=asan

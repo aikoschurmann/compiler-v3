@@ -65,14 +65,14 @@ typedef enum {
 } LiteralType;
 
 typedef struct {
-    LiteralType kind;
+    LiteralType type;
     union {
         long long       int_val;
         double          float_val;
         int             bool_val;   /* 0 or 1 */
         char            char_val;
         InternResult   *string_val; /* interned string */
-    } v;
+    } value;
 } ConstValue;
 
 
@@ -87,14 +87,14 @@ typedef struct {
 
 typedef struct {
     AstNode *type;           /* type node */
-    InternResult *name_rec;  /* interned record for the variable name */
+    InternResult *intern_result;  /* interned record for the variable name */
     int is_const;            /* boolean: 0 or 1 */
     AstNode *initializer;    /* optional */
 } AstVariableDeclaration;
 
 typedef struct {
     AstNode *return_type;    /* AstNode of AST_TYPE */
-    InternResult *name_rec;  /* interned record for the function name */
+    InternResult *intern_result;  /* interned record for the function name */
     DynArray *params;        /* AstParam nodes */
     AstNode *body;           /* AstBlock */
 } AstFunctionDeclaration;
@@ -138,8 +138,8 @@ typedef struct {
 } AstExprStatement;
 
 /* small expression structs */
-typedef struct { LiteralType type; ConstValue value; } AstLiteral;
-typedef struct { InternResult *name_rec; } AstIdentifier; /* interned name index */
+typedef ConstValue AstLiteral;
+typedef struct { InternResult *intern_result; } AstIdentifier; /* interned name index */
 typedef struct { AstNode *left; AstNode *right; OpKind op; } AstBinaryExpr;
 typedef struct { OpKind op; AstNode *expr; } AstUnaryExpr;
 typedef struct { AstNode *expr; OpKind op; } AstPostfixExpr;
@@ -149,7 +149,7 @@ typedef struct { AstNode *target; AstNode *index; } AstSubscriptExpr;
 
 
 typedef enum {
-    AST_TYPE_NAME,   // named type: i32, foo, etc. (holds interned id)
+    AST_TYPE_PRIMITIVE,   // primitive type: i32, foo, etc. (holds interned id)
     AST_TYPE_PTR,    // pointer to inner type
     AST_TYPE_ARRAY,  // array of inner type with optional size expression
     AST_TYPE_FUNC    // function type: params list + return type
@@ -161,7 +161,7 @@ typedef struct AstType {
 
     union {
         /* AST_TYPE_NAME */
-        struct { InternResult *rec; } base;  // record from interner for the type name
+        struct { InternResult *intern_result; } base;  // record from interner for the type name
 
         /* AST_TYPE_PTR */
         struct { AstNode *target; } ptr;

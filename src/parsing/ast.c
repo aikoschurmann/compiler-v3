@@ -32,7 +32,7 @@ static const char *node_type_to_string(AstNodeType type) {
 
 static const char *type_kind_to_string(AstTypeKind kind) {
     switch (kind) {
-        case AST_TYPE_NAME: return "NamedType";
+        case AST_TYPE_PRIMITIVE: return "PrimitiveType";
         case AST_TYPE_PTR: return "PointerType";
         case AST_TYPE_ARRAY: return "ArrayType";
         case AST_TYPE_FUNC: return "FunctionType";
@@ -294,15 +294,15 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
     // Add const info if relevant
     if (node->is_const_expr) {
         printf(" (const:");
-        switch (node->const_value.kind) {
+        switch (node->const_value.type) {
             case INT_LITERAL:
-                printf("%lld", node->const_value.v.int_val);
+                printf("%lld", node->const_value.value.int_val);
                 break;
             case FLOAT_LITERAL:
-                printf("%f", node->const_value.v.float_val);
+                printf("%f", node->const_value.value.float_val);
                 break;
             case BOOL_LITERAL:
-                printf("%s", node->const_value.v.bool_val ? "true" : "false");
+                printf("%s", node->const_value.value.bool_val ? "true" : "false");
                 break;
             default:
                 printf("?");
@@ -334,10 +334,10 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             // Print name info
             print_tree_prefix(depth + 1, child_count == 0);
             printf("name: ");
-            if (node->data.variable_declaration.name_rec && 
-                node->data.variable_declaration.name_rec->entry && identifiers) {
-                const char *name = interner_get_cstr(identifiers, node->data.variable_declaration.name_rec->entry->dense_index);
-                printf("'%s' (I-index:%d)", name ? name : "?", node->data.variable_declaration.name_rec->entry->dense_index);
+            if (node->data.variable_declaration.intern_result && 
+                node->data.variable_declaration.intern_result->entry && identifiers) {
+                const char *name = interner_get_cstr(identifiers, node->data.variable_declaration.intern_result->entry->dense_index);
+                printf("'%s' (I-index:%d)", name ? name : "?", node->data.variable_declaration.intern_result->entry->dense_index);
             } else {
                 printf("(none)");
             }
@@ -370,10 +370,10 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             // Print name
             print_tree_prefix(depth + 1, 0);
             printf("name: ");
-            if (node->data.function_declaration.name_rec && 
-                node->data.function_declaration.name_rec->entry && identifiers) {
-                const char *name = interner_get_cstr(identifiers, node->data.function_declaration.name_rec->entry->dense_index);
-                printf("'%s' (I-index:%d)", name ? name : "?", node->data.function_declaration.name_rec->entry->dense_index);
+            if (node->data.function_declaration.intern_result && 
+                node->data.function_declaration.intern_result->entry && identifiers) {
+                const char *name = interner_get_cstr(identifiers, node->data.function_declaration.intern_result->entry->dense_index);
+                printf("'%s' (I-index:%d)", name ? name : "?", node->data.function_declaration.intern_result->entry->dense_index);
             } else {
                 printf("(none)");
             }
@@ -530,21 +530,21 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             printf("value: ");
             switch (node->data.literal.type) {
                 case INT_LITERAL:
-                    printf("%lld (%s)", node->data.literal.value.v.int_val, literal_type_to_string(node->data.literal.type));
+                    printf("%lld (%s)", node->data.literal.value.int_val, literal_type_to_string(node->data.literal.type));
                     break;
                 case FLOAT_LITERAL:
-                    printf("%f (%s)", node->data.literal.value.v.float_val, literal_type_to_string(node->data.literal.type));
+                    printf("%f (%s)", node->data.literal.value.float_val, literal_type_to_string(node->data.literal.type));
                     break;
                 case BOOL_LITERAL:
-                    printf("%s (%s)", node->data.literal.value.v.bool_val ? "true" : "false", literal_type_to_string(node->data.literal.type));
+                    printf("%s (%s)", node->data.literal.value.bool_val ? "true" : "false", literal_type_to_string(node->data.literal.type));
                     break;
                 case STRING_LITERAL: {
-                    if (node->data.literal.value.v.string_val && 
-                        node->data.literal.value.v.string_val->entry && strings) {
-                        const char *str = interner_get_cstr(strings, node->data.literal.value.v.string_val->entry->dense_index);
+                    if (node->data.literal.value.string_val && 
+                        node->data.literal.value.string_val->entry && strings) {
+                        const char *str = interner_get_cstr(strings, node->data.literal.value.string_val->entry->dense_index);
                         print_escaped_string(str);
                         printf(" (%s)", literal_type_to_string(node->data.literal.type));
-                        printf(" (S-index:%d)", node->data.literal.value.v.string_val->entry->dense_index);
+                        printf(" (S-index:%d)", node->data.literal.value.string_val->entry->dense_index);
                     } else {
                         // Fallback: string not properly interned, show as empty
                         printf("\"\" (%s)", literal_type_to_string(node->data.literal.type));
@@ -552,7 +552,7 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
                     break;
                 }
                 case CHAR_LITERAL:
-                    print_escaped_char(node->data.literal.value.v.char_val);
+                    print_escaped_char(node->data.literal.value.char_val);
                     printf(" (%s)", literal_type_to_string(node->data.literal.type));
                     break;
                 default:
@@ -565,10 +565,10 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
         case AST_IDENTIFIER:
             print_tree_prefix(depth + 1, 1);
             printf("name: ");
-            if (node->data.identifier.name_rec && 
-                node->data.identifier.name_rec->entry && identifiers) {
-                const char *name = interner_get_cstr(identifiers, node->data.identifier.name_rec->entry->dense_index);
-                printf("'%s' (I-index:%d)", name ? name : "?", node->data.identifier.name_rec->entry->dense_index);
+            if (node->data.identifier.intern_result && 
+                node->data.identifier.intern_result->entry && identifiers) {
+                const char *name = interner_get_cstr(identifiers, node->data.identifier.intern_result->entry->dense_index);
+                printf("'%s' (I-index:%d)", name ? name : "?", node->data.identifier.intern_result->entry->dense_index);
             } else {
                 printf("(unknown)");
             }
@@ -671,11 +671,11 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             printf("\n");
             
             switch (node->data.ast_type.kind) {
-                case AST_TYPE_NAME:
+                case AST_TYPE_PRIMITIVE:
                     print_tree_prefix(depth + 1, 1);
                     printf("type_name: ");
-                    if (node->data.ast_type.u.base.rec && node->data.ast_type.u.base.rec->entry) {
-                        int dense_index = node->data.ast_type.u.base.rec->entry->dense_index;
+                    if (node->data.ast_type.u.base.intern_result && node->data.ast_type.u.base.intern_result->entry) {
+                        int dense_index = node->data.ast_type.u.base.intern_result->entry->dense_index;
                         const char *type_name = "?";
                         if (keywords) {
                             type_name = interner_get_cstr(keywords, dense_index);
