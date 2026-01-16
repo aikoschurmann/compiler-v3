@@ -8,6 +8,10 @@
    HashMap API (separate chaining)
    ----------------------------- */
 
+/* Standard pointer identity hash/cmp for when keys are local pointers */
+static inline size_t ptr_hash(void *key) { return (size_t)key; }
+static inline int ptr_cmp(void *a, void *b) { return (a == b) ? 0 : 1; }
+
 typedef struct {
     void *key;
     void *value;

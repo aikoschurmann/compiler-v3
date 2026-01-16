@@ -107,7 +107,7 @@ static void lexer_skip_whitespace(Lexer *lexer) {
             continue;
         }
 
-        /* block comment /* ... *\/ */
+        /* block comment ... */
         if (c == '/' && (lexer->cur + 1) < lexer->end && *(lexer->cur + 1) == '*') {
             lexer_advance(lexer); /* '/' */
             lexer_advance(lexer); /* '*' */

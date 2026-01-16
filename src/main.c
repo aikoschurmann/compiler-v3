@@ -12,11 +12,12 @@
 #include "arena.h"
 
 
+#include "type.h"
+#include "typecheck.h"
+#include "type_print.h"
 #include "scope.h"
-
 #include "cli.h"
 #include "metrics.h"
-
 
 #define EXIT_USAGE 1
 #define EXIT_IO    2
@@ -108,6 +109,21 @@ int main(int argc, char **argv) {
     if (opts.print_ast && program) {
         print_ast(program, 0, lexer->keywords, lexer->identifiers, lexer->strings);
     }
+
+    /* ---------------------------------------------------------
+     * Semantic Analysis (Type Resolution)
+     * --------------------------------------------------------- */
+    TypeStore *store = typestore_create(arena, lexer->identifiers, lexer->keywords);
+    
+    // Resolve all types in the AST
+    if (program) {
+        resolve_program_types(store, (AstProgram*)&program->data.program, lexer->identifiers, lexer->keywords);
+    }
+
+    if (opts.print_types) {
+        type_print_store_dump(store, program);
+    }
+
 
     long peak_rss_after_kb = get_peak_rss_kb();
 

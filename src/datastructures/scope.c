@@ -1,131 +1,153 @@
-// #include "scope.h"
-// #include <stdio.h>
-// #include <string.h>// 
+#include "scope.h"
+#include <stdio.h>
+#include <string.h>
 
-// Scope *scope_create(Arena *arena, Scope *parent, int identifier_count) {
-//     Scope *scope = arena_calloc(arena, sizeof(Scope));
-//     if (!scope) return NULL;// 
+Scope *scope_create(Arena *arena, Scope *parent, int identifier_count, int kind) {
+    Scope *scope = arena_calloc(arena, sizeof(Scope));
+    if (!scope) return NULL;
 
-//     scope->symbols = arena_calloc(arena, sizeof(Symbol *) * identifier_count);
-//     if (!scope->symbols) {
-//         return NULL;
-//     }// 
+    scope->symbols = arena_calloc(arena, sizeof(Symbol *) * identifier_count);
+    if (!scope->symbols) {
+        return NULL;
+    }
 
-//     scope->depth = parent ? parent->depth + 1 : 0;
-//     scope->arena = arena;  // Set the arena field// 
+    scope->depth = parent ? parent->depth + 1 : 0;
+    scope->parent = parent;
+    scope->arena = arena;  // Set the arena field
+    scope->capacity = identifier_count; 
+    scope->kind = kind;
 
-//     return scope;
-// }// 
+    return scope;
+}
 
-// Symbol *scope_define_symbol(Scope *scope, InternResult *rec, Type *type, SymbolValue kind) {
-//     if (!scope || !rec || !type) {
-//         return NULL;
-//     }// 
+Symbol *scope_define_symbol(Scope *scope, InternResult *rec, Type *type, SymbolValue kind) {
+    if (!scope || !rec || !type) {
+        return NULL;
+    }
 
-//     // Check for existing symbol in current scope
-//     if (scope_lookup_symbol_local(scope, rec)) {
-//         // Symbol already defined in this scope
-//         return NULL;
-//     }// 
+    if (rec->entry->dense_index >= scope->capacity) {
+        printf("scope_define_symbol: index %d out of bounds (cap %zu)\n", rec->entry->dense_index, scope->capacity);
+        return NULL; 
+    }
 
-//     Symbol *symbol = arena_calloc(scope->arena, sizeof(Symbol));
-//     if (!symbol) {
-//         return NULL;
-//     }// 
+    // Check for existing symbol in current scope
+    if (scope_lookup_symbol_local(scope, rec)) {
+        printf("scope_define_symbol: symbol at index %d already defined\n", rec->entry->dense_index);
+        return NULL;
+    }
 
-//     symbol->name_rec = rec;
-//     symbol->type = type;
-//     symbol->kind = kind;
-//     symbol->flags = SYMBOL_FLAG_NONE;// 
+    Symbol *symbol = arena_calloc(scope->arena, sizeof(Symbol));
+    if (!symbol) {
+        return NULL;
+    }
 
-//     scope->symbols[rec->entry->dense_index] = symbol;
-//     scope->symbol_count++;
-//     
-//     return symbol;
-// }// 
+    symbol->name_rec = rec;
+    symbol->type = type;
+    symbol->kind = kind;
+    symbol->flags = SYMBOL_FLAG_NONE;
 
-// Symbol *scope_lookup_symbol_local(Scope *scope, InternResult *rec) {
-//     if (!scope || !rec) return NULL;
-//     return scope->symbols[rec->entry->dense_index];
-// }// 
+    scope->symbols[rec->entry->dense_index] = symbol;
+    scope->symbol_count++;
+    
+    return symbol;
+}
 
-// Symbol *scope_lookup_symbol(Scope *scope, InternResult *rec) {
-//     if (!scope || !rec) return NULL;// 
+Symbol *scope_lookup_symbol_local(Scope *scope, InternResult *rec) {
+    if (!scope || !rec) return NULL;
+    if (rec->entry->dense_index >= scope->capacity) return NULL;
+    return scope->symbols[rec->entry->dense_index];
+}
 
-//     Scope *current = scope;
-//     while (current) {
-//         Symbol *symbol = scope_lookup_symbol_local(current, rec);
-//         if (symbol) return symbol;
-//         current = current->parent;
-//     }
-//     return NULL;
-// }// 
+Symbol *scope_lookup_symbol(Scope *scope, InternResult *rec) {
+    if (!scope || !rec) return NULL;
+    
+    // Detect if the key is a Keyword (meta != 0) or Identifier (meta == 0)
+    // Note: TOK_FN is 0, but 'fn' is not a type, so it won't be looked up as a type.
+    bool is_keyword_key = (rec->entry->meta != NULL);
 
-// Symbol *symbol_set_value_int(Symbol *symbol, int value){
-//     if (!symbol) return NULL;
-//     symbol->kind = SYMBOL_VALUE_INT;
-//     symbol->value.int_val = value;
-//     return symbol;
-// }
-// Symbol *symbol_set_value_float(Symbol *symbol, float value){
-//     if (!symbol) return NULL;
-//     symbol->kind = SYMBOL_VALUE_FLOAT;
-//     symbol->value.float_val = value;
-//     return symbol;
-// }
-// Symbol *symbol_set_value_bool(Symbol *symbol, bool value){
-//     if (!symbol) return NULL;
-//     symbol->kind = SYMBOL_VALUE_BOOL;
-//     symbol->value.bool_val = value;
-//     return symbol;
-// }// 
+    Scope *current = scope;
+    while (current) {
+        // Only lookup if the scope kind matches the key kind
+        // SCOPE_IDENTIFIERS (0) matches meta==NULL (0)
+        // SCOPE_KEYWORDS (1) matches meta!=NULL (1)
+        bool is_keyword_scope = (current->kind == SCOPE_KEYWORDS);
+        
+        if (is_keyword_key == is_keyword_scope) {
+             Symbol *symbol = scope_lookup_symbol_local(current, rec);
+             if (symbol) return symbol;
+        }
+        
+        current = current->parent;
+    }
+    return NULL;
+}
 
-// size_t scope_get_symbol_count(Scope *scope){
-//     if (!scope) return 0;
-//     return scope->symbol_count;
-// }// 
+Symbol *symbol_set_value_int(Symbol *symbol, int value){
+    if (!symbol) return NULL;
+    symbol->kind = SYMBOL_VALUE_INT;
+    symbol->value.int_val = value;
+    return symbol;
+}
+Symbol *symbol_set_value_float(Symbol *symbol, float value){
+    if (!symbol) return NULL;
+    symbol->kind = SYMBOL_VALUE_FLOAT;
+    symbol->value.float_val = value;
+    return symbol;
+}
+Symbol *symbol_set_value_bool(Symbol *symbol, bool value){
+    if (!symbol) return NULL;
+    symbol->kind = SYMBOL_VALUE_BOOL;
+    symbol->value.bool_val = value;
+    return symbol;
+}
 
-// void scope_set_flags(Scope *scope, InternResult *rec, int flags){
-//     if (!scope || !rec) return;// 
+size_t scope_get_symbol_count(Scope *scope){
+    if (!scope) return 0;
+    return scope->symbol_count;
+}
 
-//     Symbol *symbol = scope_lookup_symbol(scope, rec);
-//     if (symbol) {
-//         symbol->flags |= flags;
-//     }
-// }// 
+void scope_set_flags(Scope *scope, InternResult *rec, int flags){
+    if (!scope || !rec) return;
 
-// void scope_check_unused_symbols(Scope *scope){
-//     if (!scope) return;// 
+    Symbol *symbol = scope_lookup_symbol(scope, rec);
+    if (symbol) {
+        symbol->flags |= flags;
+    }
+}
 
-//     for (size_t i = 0; i < scope->symbol_count; i++) {
-//         Symbol *symbol = scope->symbols[i];
-//         if (symbol && !(symbol->flags & SYMBOL_FLAG_USED)) {
-//             printf("Warning: Unused symbol '%s'\n", symbol->name_rec->key ? (char*)symbol->name_rec->key : "(unknown)");
-//         }
-//     }
-// }// 
+void scope_check_unused_symbols(Scope *scope){
+    if (!scope) return;
 
-// void scope_print_symbols(Scope *scope, int indent) {
-//     if (!scope) return;// 
+    for (size_t i = 0; i < scope->symbol_count; i++) {
+        Symbol *symbol = scope->symbols[i];
+        if (symbol && !(symbol->flags & SYMBOL_FLAG_USED)) {
+            printf("Warning: Unused symbol '%s'\n", symbol->name_rec->key ? (char*)symbol->name_rec->key : "(unknown)");
+        }
+    }
+}
 
-//     for (size_t i = 0; i < scope->symbol_count; ++i) {
-//         Symbol *s = scope->symbols[i];
-//         if (!s) continue;
-//         const char *name = s->name_rec && s->name_rec->key ? (char*)s->name_rec->key : "(unknown)";
-//         const char *type_name = s->type ? type_kind_to_string(s->type->kind) : "(none)";
-//         printf("%*s- Symbol: '%s', type: %s, flags: 0x%02x\n", indent, "", name, type_name, (unsigned)s->flags);
-//     }
-// }// 
+void scope_print_symbols(Scope *scope, int indent) {
+    if (!scope) return;
 
-// void scope_print_hierarchy(Scope *scope) {
-//     if (!scope) return;// 
+    for (size_t i = 0; i < scope->symbol_count; ++i) {
+        Symbol *s = scope->symbols[i];
+        if (!s) continue;
+        const char *name = s->name_rec && s->name_rec->key ? (char*)s->name_rec->key : "(unknown)";
+        // For now just print "(type present)" because we don't include type.h
+        const char *type_name = s->type ? "(type present)" : "(none)";
+        printf("%*s- Symbol: '%s', type: %s, flags: 0x%02x\n", indent, "", name, type_name, (unsigned)s->flags);
+    }
+}
 
-//     int indent = 0;
-//     Scope *cur = scope;
-//     while (cur) {
-//         printf("%*s- Scope (depth %zu):\n", indent, "", cur->depth);
-//         scope_print_symbols(cur, indent + 2);
-//         cur = cur->parent;
-//         indent += 2;
-//     }
-// }
+void scope_print_hierarchy(Scope *scope) {
+    if (!scope) return;
+
+    int indent = 0;
+    Scope *cur = scope;
+    while (cur) {
+        printf("%*s- Scope (depth %zu):\n", indent, "", cur->depth);
+        scope_print_symbols(cur, indent + 2);
+        cur = cur->parent;
+        indent += 2;
+    }
+}

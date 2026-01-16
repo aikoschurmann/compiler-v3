@@ -17,8 +17,9 @@
   - [lexing.md](./lexing.md)
 2) Parsing — AST construction with arena allocation and canonical identifiers
   - [parsing.md](./parsing.md)
-3) (Upcoming) Semantics & types — symbol tables, type interning, checking
-  - semantics.md (planned)
+3) Semantics & types — symbol tables, type interning, checking
+  - [semantics.md](./semantics.md)
+  - [scope.md](./scope.md)
 
 Keep these infrastructure docs handy while reading the above:
 - Interner — canonical keys, dense indices, and how intern() works
