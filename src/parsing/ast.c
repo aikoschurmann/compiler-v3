@@ -292,9 +292,9 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
     }
     // Add type info if available
     if (node->type) {
-        printf(" \033[36mtype=");
+        printf(" \033[36m<");
         type_print(stdout, node->type);
-        printf("\033[0m");
+        printf(">\033[0m");
     }
     // Add const info if relevant
     if (node->is_const_expr) {
