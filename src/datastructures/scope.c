@@ -48,8 +48,7 @@ Symbol *scope_define_symbol(Scope *scope, InternResult *rec, Type *type, SymbolV
 
     // Check for existing symbol in current scope
     if (scope_lookup_symbol_local(scope, rec)) {
-        printf("scope_define_symbol: symbol at index %d already defined\n", rec->entry->dense_index);
-        return NULL;
+        return NULL; // Symbol already defined in this scope
     }
 
     Symbol *symbol = arena_calloc(scope->arena, sizeof(Symbol));

@@ -39,3 +39,13 @@ static inline Span span_join(const Span *a, const Span *b) {
     if (!a || !b) return (Span){0,0,0,0};
     return (Span){a->start_line, a->start_col, b->end_line, b->end_col};
 }
+
+static size_t ptr_identity_hash(void *p) {
+    // Hash the pointer value itself
+    return (size_t)p;
+}
+
+static int ptr_identity_cmp(void *a, void *b) {
+    // Compare pointer identity
+    return (a > b) - (a < b);
+}

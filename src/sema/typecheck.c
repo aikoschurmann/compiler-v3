@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+
+
 TypeCheckContext typecheck_context_create(Arena *arena, AstNode *program, TypeStore *store, DenseArenaInterner *identifiers, DenseArenaInterner *keywords, const char *filename) {
     DynArray *errors = arena_alloc(arena, sizeof(DynArray));
     dynarray_init_in_arena(errors, arena, sizeof(TypeError), 8);
@@ -20,6 +22,38 @@ TypeCheckContext typecheck_context_create(Arena *arena, AstNode *program, TypeSt
     return ctx;
 }
 
+static void define_symbol_or_error(TypeCheckContext *ctx, Scope *scope, InternResult *name, Type *type, SymbolValue kind, Span span) {
+    if (!scope || !name) return;
+
+    Symbol *sym = scope_define_symbol(scope, name, type, kind);
+    
+    if (!sym) {
+        // Symbol already exists! Report error.
+        const char *sym_name = "<unknown>";
+        if (name->key) {
+            sym_name = ((Slice*)name->key)->ptr;
+        }
+
+        TypeError err = {
+            .kind = TE_REDECLARATION,
+            .span = span,
+            .filename = ctx->filename,
+            .as.name.name = sym_name
+        };
+        dynarray_push_value(ctx->errors, &err);
+    }
+}
+
+#ifdef _MSC_VER
+#include <malloc.h>
+#define ALLOCA _alloca
+#else
+#include <alloca.h>
+#define ALLOCA alloca
+#endif
+
+#define FAST_GET(arr, i) (((AstNode**)(arr)->data)[i])
+
 Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node) {
     if (!store || !node) return NULL;
     
@@ -32,23 +66,16 @@ Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node) {
     switch (ast_ty->kind) {
         case AST_TYPE_PRIMITIVE: {
             InternResult *name_res = ast_ty->u.base.intern_result;
-            void *key_ptr = name_res ? name_res->key : NULL;
+            
+            if (name_res && name_res->key) {
+                 // 1. Primitive Registry (Fastest)
+                Type *prim = (Type*)hashmap_get(store->primitive_registry, name_res->key, ptr_hash, ptr_cmp);
+                if (prim) return prim;
 
-            // 1. FAST LOOKUP: Check the Primitive Registry
-            // This effectively treats primitives as "reserved type names"
-            if (key_ptr) {
-                Type *prim = (Type*)hashmap_get(store->primitive_registry, key_ptr, ptr_hash, ptr_cmp);
-                if (prim) {
-                    return prim;
-                }
-            }
-
-            // 2. If not a primitive, THEN check the User Scope
-            // This finds structs, enums, or typedefs defined by the user.
-            if (scope) {
-                Symbol *sym = scope_lookup_symbol(scope, name_res);
-                if (sym && sym->kind == SYMBOL_VALUE_TYPE) {
-                    return sym->type;
+                // 2. User Scope (Slower)
+                if (scope) {
+                    Symbol *sym = scope_lookup_symbol(scope, name_res);
+                    if (sym && sym->kind == SYMBOL_VALUE_TYPE) return sym->type;
                 }
             }
             return NULL; 
@@ -58,13 +85,10 @@ Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node) {
             Type *target = resolve_ast_type(store, scope, ast_ty->u.ptr.target);
             if (!target) return NULL;
 
-            Type proto = {0};
-            proto.kind = TYPE_POINTER;
-            proto.as.ptr.base = target;
-            
+            Type proto = { .kind = TYPE_POINTER, .as.ptr.base = target };
+            // Note: intern_type handles the pointer hashing logic
             InternResult *res = intern_type(store, &proto);
-            if (!res) return NULL;
-            return (Type*)((Slice*)res->key)->ptr;
+            return res ? (Type*)((Slice*)res->key)->ptr : NULL;
         }
 
         case AST_TYPE_ARRAY: {
@@ -74,8 +98,9 @@ Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node) {
             int64_t size = 0;
             bool size_known = false;
             
-            if (ast_ty->u.array.size_expr) {
-                AstNode *sz = ast_ty->u.array.size_expr;
+            AstNode *sz = ast_ty->u.array.size_expr;
+            if (sz) {
+                // Inline check for common literal case
                 if (sz->node_type == AST_LITERAL && sz->data.literal.type == INT_LITERAL) {
                     size = sz->data.literal.value.int_val;
                     size_known = true;
@@ -83,21 +108,18 @@ Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node) {
                      size = sz->data.literal.value.int_val;
                      size_known = true;
                 }
-                
-                if (!size_known) {
-                    return NULL;
-                }
+                if (!size_known) return NULL;
             }
 
-            Type proto = {0};
-            proto.kind = TYPE_ARRAY;
-            proto.as.array.base = elem;
-            proto.as.array.size = size;
-            proto.as.array.size_known = size_known;
+            Type proto = { 
+                .kind = TYPE_ARRAY, 
+                .as.array.base = elem, 
+                .as.array.size = size, 
+                .as.array.size_known = size_known 
+            };
 
             InternResult *res = intern_type(store, &proto);
-            if (!res) return NULL;
-            return (Type*)((Slice*)res->key)->ptr;
+            return res ? (Type*)((Slice*)res->key)->ptr : NULL;
         }
 
         case AST_TYPE_FUNC: {
@@ -109,32 +131,38 @@ Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node) {
              
              Type **param_types = NULL;
              if (count > 0) {
-                 param_types = malloc(sizeof(Type*) * count);
-                 if (!param_types) return NULL;
+                 // OPTIMIZATION: Use Stack Allocation for small params (99% of cases)
+                 // Avoids malloc/free overhead completely.
+                 if (count <= 64) {
+                     param_types = ALLOCA(sizeof(Type*) * count);
+                 } else {
+                     param_types = malloc(sizeof(Type*) * count);
+                 }
              }
              
+             // OPTIMIZATION: Raw array access loop
              for (size_t i = 0; i < count; i++) {
-                 AstNode *p_node = *(AstNode**)dynarray_get(params, i);
+                 AstNode *p_node = FAST_GET(params, i);
                  Type *pt = resolve_ast_type(store, scope, p_node);
                  if (!pt) {
-                     free(param_types);
+                     if (count > 64) free(param_types);
                      return NULL;
                  }
                  param_types[i] = pt;
              }
              
-             Type proto = {0};
-             proto.kind = TYPE_FUNCTION;
-             proto.as.func.return_type = ret;
-             proto.as.func.param_count = count;
-             proto.as.func.params = param_types;
+             Type proto = {
+                 .kind = TYPE_FUNCTION,
+                 .as.func.return_type = ret,
+                 .as.func.param_count = count,
+                 .as.func.params = param_types
+             };
              
              InternResult *res = intern_type(store, &proto);
              
-             free(param_types);
+             if (count > 64) free(param_types);
              
-             if (!res) return NULL;
-             return (Type*)((Slice*)res->key)->ptr;
+             return res ? (Type*)((Slice*)res->key)->ptr : NULL;
         }
     }
     return NULL;
@@ -218,12 +246,13 @@ void resolve_program_functions(TypeCheckContext *ctx, Scope *global_scope) {
              // Define function symbol in global scope
              AstFunctionDeclaration *func = &decl->data.function_declaration;
              if (func->intern_result && decl->type) {
-                 scope_define_symbol(global_scope, func->intern_result, decl->type, SYMBOL_VALUE_FUNCTION);
+                 define_symbol_or_error(ctx, global_scope, func->intern_result, decl->type, SYMBOL_VALUE_FUNCTION, decl->span);
              }
         }
 
     }
 }
+
 
 static Type* check_expression(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *expected_type) {
     if (!expr) return NULL;
@@ -416,7 +445,7 @@ void check_variable_declaration(TypeCheckContext *ctx, Scope *scope, AstNode *va
     var_node->type = var_type;
     // Define variable symbol in the current scope
     if (var_decl->intern_result) {
-        scope_define_symbol(scope, var_decl->intern_result, var_type, SYMBOL_VARIABLE);
+        define_symbol_or_error(ctx, scope, var_decl->intern_result, var_type, SYMBOL_VARIABLE, var_node->span);
     }
     
     check_initializer(ctx, scope, var_node->data.variable_declaration.initializer, var_type);
@@ -446,7 +475,7 @@ static void check_function(TypeCheckContext *ctx, Scope *parent_scope, AstNode *
         // The type was already resolved in Phase 1 and stored in param->type!
         if (param->data.param.name_idx != -1) {
             InternResult *name_rec = interner_get_result(ctx->identifiers, param->data.param.name_idx);
-            scope_define_symbol(fn_scope, name_rec, param->type, SYMBOL_VARIABLE);
+            define_symbol_or_error(ctx, fn_scope, name_rec, param->type, SYMBOL_VARIABLE, param->span);
         }
     }
 
