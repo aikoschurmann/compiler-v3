@@ -27,11 +27,14 @@ typedef struct Arena {
 - `arena_create(initial_capacity)` – create an arena with an initial block.
 - `arena_alloc(arena, size)` – allocate uninitialized bytes (fast bump).
 - `arena_calloc(arena, size)` – allocate zeroed bytes.
+- `arena_reset(arena)` – drop all blocks except the first and reuse it.
 - `arena_destroy(arena)` – free all blocks at once.
 - `arena_total_allocated(arena)` – total bytes currently allocated (diagnostics).
 
 ## Why use it
 An arena allocates memory linearly, making many small allocations cheap and predictable. Instead of calling `malloc`/`free` repeatedly (overhead, fragmentation), you bump a pointer and keep going. This is ideal for compilers where lots of short‑lived objects (tokens, identifiers, AST nodes, types) are created during a pass. At the end, call `arena_destroy` and reclaim everything in O(1)—no per‑object frees or deep recursion to tear down an AST.
+
+Allocations are aligned to `max_align_t`, so pointers and structs are safely aligned without extra work by callers.
 
 | Need | Arena advantage |
 |------|------------------|

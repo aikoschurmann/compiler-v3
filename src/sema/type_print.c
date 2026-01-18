@@ -27,18 +27,13 @@
 
 static const char* get_primitive_name(PrimitiveKind kind) {
     switch (kind) {
-        case PRIM_I8:   return "i8";
-        case PRIM_I16:  return "i16";
         case PRIM_I32:  return "i32";
         case PRIM_I64:  return "i64";
-        case PRIM_U8:   return "u8";
-        case PRIM_U16:  return "u16";
-        case PRIM_U32:  return "u32";
-        case PRIM_U64:  return "u64";
         case PRIM_F32:  return "f32";
         case PRIM_F64:  return "f64";
         case PRIM_BOOL: return "bool";
         case PRIM_CHAR: return "char";
+        case PRIM_STR:  return "str";
         case PRIM_VOID: return "void";
         default:        return "unknown_prim";
     }
@@ -55,26 +50,26 @@ static void type_print_internal(FILE *f, const Type *type) {
 
         case TYPE_POINTER:
             type_print_internal(f, type->as.ptr.base);
-            fprintf(f, "%s*" RESET, COL_PTR);
+            fprintf(f, "*");
             break;
 
         case TYPE_ARRAY:
             type_print_internal(f, type->as.array.base);
-            fprintf(f, "%s[" RESET, COL_ARR);
+            fprintf(f, "[");
             if (type->as.array.size_known) {
                 fprintf(f, "%s%lld" RESET, COL_NUM, (long long)type->as.array.size);
             }
-            fprintf(f, "%s]" RESET, COL_ARR);
+            fprintf(f, "]");
             break;
             
         case TYPE_FUNCTION:
-            fprintf(f, "%s(" RESET, COL_FUNC);
+            fprintf(f, "(");
             for (size_t i = 0; i < type->as.func.param_count; i++) {
                 if (i > 0) fprintf(f, ", ");
                 type_print_internal(f, type->as.func.params[i]);
             }
 
-            fprintf(f, "%s) -> " RESET, COL_FUNC);
+            fprintf(f, ") -> ");
             if (type->as.func.return_type) {
                 type_print_internal(f, type->as.func.return_type);
             } else {
@@ -135,10 +130,32 @@ static void print_header(void) {
     printf(BOLD "═══════════════════════════════════════════════════════════════════" RESET "\n");
 }
 
-static void print_interned_type_line(int index, Type *type) {
-    printf("  " COL_INDEX "[%d]" RESET " ", index);
+static int digits_for_count(int count) {
+    int digits = 1;
+    int value = count > 0 ? count - 1 : 0;
+    while (value >= 10) {
+        value /= 10;
+        digits++;
+    }
+    return digits;
+}
+
+static void print_interned_type_header(int index_width) {
+    int index_col_width = index_width + 2;
+    if (index_col_width < 5) index_col_width = 5;
+    printf("  " BOLD "%-*s  %-9s  %s" RESET "\n",
+        index_col_width, "Index", "Kind", "Type");
+}
+
+static void print_interned_type_line(int index, int index_width, Type *type) {
+    int index_col_width = index_width + 2;
+    if (index_col_width < 5) index_col_width = 5;
+    
+    printf("  " COL_INDEX "[%*d]" RESET "%*s", index_width, index,
+        (int)(index_col_width - (index_width + 2) + 2), "");
+    printf("%s%-9s" RESET "  ", get_kind_color(type), get_kind_name(type));
     type_print_internal(stdout, type);
-    printf(" %s(%s)" RESET "\n", get_kind_color(type), get_kind_name(type));
+    printf("\n");
 }
 
 static const char *safe_symbol_name(InternResult *name_rec) {
@@ -150,63 +167,45 @@ static void print_symbol_info(AstNode *func_decl) {
     InternResult *intern_result = func_decl->data.function_declaration.intern_result;
     const char *func_name = safe_symbol_name(intern_result);
 
-    printf("  " COL_STRUCT "%s" RESET ":\n", func_name);
+    printf("  " BOLD "%s" RESET "\n", func_name);
 
     if (intern_result) {
-        printf("    • Symbol ptr: " COL_INDEX "%p" RESET "\n", (void *)intern_result);
-        if (intern_result->entry) {
-            printf("    • Symbol Name Dense Index: " COL_INDEX "[%d]" RESET "\n",
-                   intern_result->entry->dense_index);
-        } else {
-            printf("    • Symbol Name Dense Index: " COL_PTR "none" RESET "\n");
-        }
+        printf("    symbol ptr: " DIM "%p" RESET "\n", (void *)intern_result);
     } else {
-        printf("    • Symbol record: " COL_PTR "none" RESET "\n");
+        printf("    symbol ptr: " COL_PTR "none" RESET "\n");
     }
 }
 
-static void print_function_type_info(TypeStore *store, AstNode *func_decl) {
+static void print_function_type_info(AstNode *func_decl) {
     if (!func_decl->type) {
-        printf("    • Type: " COL_PTR "none" RESET "\n");
+        printf("    type: " COL_PTR "none" RESET "\n");
         return;
     }
 
-    /* Peek — do not intern new entries while printing */
-    Slice slice = { .ptr = (const char *)func_decl->type, .len = sizeof(Type) };
-    InternResult *intern_result = intern_peek(store->type_interner, &slice);
-    int dense_index = intern_result && intern_result->entry ? intern_result->entry->dense_index : -1;
-
-    printf("    • Type Index: " COL_INDEX "[%d] " RESET , dense_index);
+    printf("    type:   ");
     type_print_internal(stdout, func_decl->type);
     printf(" %s(%s)" RESET "\n", get_kind_color(func_decl->type), get_kind_name(func_decl->type));
 
     if (func_decl->type->kind != TYPE_FUNCTION) return;
 
     size_t param_count = func_decl->type->as.func.param_count;
-    printf("    • Parameters (%zu):\n", param_count);
+    printf("    params (%zu):\n", param_count);
 
     for (size_t p = 0; p < param_count; p++) {
         Type *param_type = func_decl->type->as.func.params[p];
-        Slice param_slice = { .ptr = (const char *)param_type, .len = sizeof(Type) };
-        InternResult *param_result = intern_peek(store->type_interner, &param_slice);
-        int param_dense_index = param_result && param_result->entry ? param_result->entry->dense_index : -1;
 
-        printf("       " COL_INDEX "[%d] " RESET, param_dense_index);
+        printf("      param[%zu]: ", p);
         type_print_internal(stdout, param_type);
         printf(" %s(%s)" RESET "\n", get_kind_color(param_type), get_kind_name(param_type));
     }
 
     Type *return_type = func_decl->type->as.func.return_type;
     if (return_type) {
-        Slice return_slice = { .ptr = (const char *)return_type, .len = sizeof(Type) };
-        InternResult *return_result = intern_peek(store->type_interner, &return_slice);
-        int return_dense_index = return_result && return_result->entry ? return_result->entry->dense_index : -1;
-
-        printf("    • Return Type: " COL_INDEX "[%d]" RESET " ", return_dense_index);
+        printf("    return: ");
         type_print_internal(stdout, return_type);
         printf(" %s(%s)" RESET "\n", get_kind_color(return_type), get_kind_name(return_type));
     } else {
-        printf("    • Return Type: " COL_PTR "none" RESET "\n");
+        printf("    return: " COL_PTR "none" RESET "\n");
     }
 }
 
@@ -216,15 +215,18 @@ void type_print_store_dump(TypeStore *store, AstNode *program) {
     print_header();
 
     printf("Total types interned: " COL_NUM "%d" RESET "\n",
-           store->type_interner->dense_index_count);
+           store->type_interner->dense_index_count);;
 
     /* Interned types list */
     printf("\n" BOLD "Interned Types:" RESET "\n");
+    printf("--------------\n");
 
     int count = store->type_interner->dense_index_count;
     if (count <= 0) {
         printf(" " DIM "(none)" RESET "\n");
     } else {
+        int index_width = digits_for_count(count);
+        print_interned_type_header(index_width);
         for (int i = 0; i < count; i++) {
             InternResult **result_ptr = (InternResult **)dynarray_get(store->type_interner->dense_array, i);
             if (!result_ptr || !*result_ptr) continue;
@@ -232,7 +234,7 @@ void type_print_store_dump(TypeStore *store, AstNode *program) {
             Slice *key_slice = (Slice *)result->key;
             if (!key_slice || !key_slice->ptr) continue;
             Type *type = (Type *)key_slice->ptr;
-            print_interned_type_line(i, type);
+            print_interned_type_line(i, index_width, type);
         }
     }
 
@@ -250,7 +252,7 @@ void type_print_store_dump(TypeStore *store, AstNode *program) {
         if (!func_decl || func_decl->node_type != AST_FUNCTION_DECLARATION) continue;
 
         print_symbol_info(func_decl);
-        print_function_type_info(store, func_decl);
+        print_function_type_info(func_decl);
         printf("\n");
     }
 

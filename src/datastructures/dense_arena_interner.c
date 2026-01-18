@@ -162,6 +162,18 @@ const char *interner_get_cstr(DenseArenaInterner *I, int idx) {
     return ks->ptr;
 }
 
+InternResult *interner_get_result(DenseArenaInterner *I, int idx) {
+    if (!I) return NULL;
+    size_t count = I->dense_array->count;
+    if (idx < 0) return NULL;
+    if ((size_t)idx >= count) return NULL;
+
+    void *elem_ptr = dynarray_get(I->dense_array, (size_t)idx);
+    if (!elem_ptr) return NULL;
+
+    return *(InternResult **)elem_ptr;
+}
+
 void interner_foreach(const DenseArenaInterner *I,
                       InternerIterFn cb,
                       void *user)

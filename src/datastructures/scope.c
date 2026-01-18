@@ -26,8 +26,24 @@ Symbol *scope_define_symbol(Scope *scope, InternResult *rec, Type *type, SymbolV
     }
 
     if (rec->entry->dense_index >= scope->capacity) {
-        printf("scope_define_symbol: index %d out of bounds (cap %zu)\n", rec->entry->dense_index, scope->capacity);
-        return NULL; 
+        // Grow the scope's symbol array
+        // Strategy: Double capacity until it fits the new index
+        size_t new_cap = scope->capacity ? scope->capacity * 2 : 16;
+        while (new_cap <= rec->entry->dense_index) {
+            new_cap *= 2;
+        }
+        
+        // Allocate new array (zeroed)
+        Symbol **new_symbols = arena_calloc(scope->arena, sizeof(Symbol *) * new_cap);
+        if (!new_symbols) return NULL;
+        
+        // Copy existing symbols
+        if (scope->symbols) {
+            memcpy(new_symbols, scope->symbols, sizeof(Symbol *) * scope->capacity);
+        }
+        
+        scope->symbols = new_symbols;
+        scope->capacity = new_cap;
     }
 
     // Check for existing symbol in current scope

@@ -30,6 +30,7 @@ Heap-backed:
 [Arena](arena.md)-backed:
 - `dynarray_init_in_arena(da, arena, elem_size, initial_capacity)`
 - `dynarray_reserve_in_arena(da, min_capacity)` (allocates new larger block; previous block not reclaimed until arena reset)
+- `dynarray_push_ptr(da, ptr)` (convenience for pointer elements)
 
 
 ## Why use it

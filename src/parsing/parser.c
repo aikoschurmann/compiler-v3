@@ -117,5 +117,20 @@ void print_parse_error(ParseError *error) {
 
     /* Print the source excerpt and caret underline. We pass the local copy so the
        excerpt function sees the adjusted column when use_prev_token was requested. */
-    print_source_excerpt(filename, display_tok.span.start_line, display_tok.span.start_col);
+    if (error->use_prev_token) {
+        /* When pointing after a token, just use a single caret at the new start position */
+        print_source_excerpt(filename, display_tok.span.start_line, display_tok.span.start_col);
+    } else {
+        /* Otherwise, underline the whole token if it's on a single line */
+        if (display_tok.span.start_line == display_tok.span.end_line && 
+            display_tok.span.end_col > display_tok.span.start_col) {
+            print_source_excerpt_span(filename, 
+                                    display_tok.span.start_line, 
+                                    display_tok.span.start_col, 
+                                    display_tok.span.end_col);
+        } else {
+             /* Fallback for multi-line tokens or zero-width */
+            print_source_excerpt(filename, display_tok.span.start_line, display_tok.span.start_col);
+        }
+    }
 }

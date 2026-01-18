@@ -1,8 +1,24 @@
 #include "typecheck.h"
-#include "core/utils.h" 
+#include "utils.h" 
+#include "dynamic_array.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+TypeCheckContext typecheck_context_create(Arena *arena, AstNode *program, TypeStore *store, DenseArenaInterner *identifiers, DenseArenaInterner *keywords, const char *filename) {
+    DynArray *errors = arena_alloc(arena, sizeof(DynArray));
+    dynarray_init_in_arena(errors, arena, sizeof(TypeError), 8);
+
+    TypeCheckContext ctx = {
+        .program = program,
+        .store = store,
+        .identifiers = identifiers,
+        .keywords = keywords,
+        .filename = filename,
+        .errors = errors
+    };
+    return ctx;
+}
 
 Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node) {
     if (!store || !node) return NULL;
@@ -184,14 +200,13 @@ static void resolve_function_decl(TypeStore *store, Scope *scope, AstNode *func_
  *
  * Does NOT check function bodies yet; only signatures and global variable types.
  */
-void resolve_program_functions(TypeStore *store, AstProgram *program, DenseArenaInterner *identifiers, DenseArenaInterner *keywords) {
-    if (!store || !program || !program->decls) return;
+void resolve_program_functions(TypeCheckContext *ctx, Scope *global_scope) {
+    if (!ctx || !ctx->program) return;
+    AstProgram *program = &ctx->program->data.program;
+    TypeStore *store = ctx->store;
 
-    // Create Global Scope (root) using IDENTIFIERS
-    // Primitives are in the registry, avoiding the need for a separate Universe scope.
-    Arena *scope_arena = store->arena;
-    int global_count = identifiers->dense_index_count + 64;
-    Scope *global_scope = scope_create(scope_arena, NULL, global_count, SCOPE_IDENTIFIERS);  
+    if (!program->decls) return;
+
 
     for (size_t i = 0; i < program->decls->count; i++) {
         AstNode *decl = *(AstNode**)dynarray_get(program->decls, i);
@@ -206,15 +221,271 @@ void resolve_program_functions(TypeStore *store, AstProgram *program, DenseArena
                  scope_define_symbol(global_scope, func->intern_result, decl->type, SYMBOL_VALUE_FUNCTION);
              }
         }
-        //else if (decl->node_type == AST_VARIABLE_DECLARATION) {
-        //     AstVariableDeclaration *var = &decl->data.variable_declaration;
-        //     if (var->type) {
-        //         decl->type = resolve_ast_type(store, global_scope, var->type);
-        //     }
-        //     
-        //     if (var->intern_result && decl->type) {
-        //         scope_define_symbol(global_scope, var->intern_result, decl->type, SYMBOL_VARIABLE);
-        //     }
-        //}
+
+    }
+}
+
+static Type* check_expression(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *expected_type) {
+    if (!expr) return NULL;
+    
+    Type *result_type = NULL;
+
+    switch (expr->node_type) {
+        case AST_LITERAL: {
+            LiteralType lit_kind = expr->data.literal.type;
+            if (lit_kind == INT_LITERAL) {
+                if (expected_type == ctx->store->t_i64) result_type = ctx->store->t_i64;
+                else result_type = ctx->store->t_i32;
+            } 
+            else if (lit_kind == FLOAT_LITERAL) {
+                if (expected_type == ctx->store->t_f32) result_type = ctx->store->t_f32;
+                else result_type = ctx->store->t_f64;
+            } 
+            else if (lit_kind == BOOL_LITERAL)   result_type = ctx->store->t_bool;
+            else if (lit_kind == CHAR_LITERAL)   result_type = ctx->store->t_char;
+            else if (lit_kind == STRING_LITERAL) result_type = ctx->store->t_str;
+            break;
+        }
+
+        case AST_IDENTIFIER: {
+            AstIdentifier *ident = &expr->data.identifier;
+            InternResult *name_res = ident->intern_result;
+            Symbol *sym = scope_lookup_symbol(scope, name_res);
+            
+            if (!sym) {
+                TypeError err = {
+                    .kind = TE_UNDECLARED,
+                    .span = expr->span,
+                    .filename = ctx->filename,
+                    .as.name.name = name_res && name_res->key ? ((Slice*)name_res->key)->ptr : "<unknown>"
+                };
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+            result_type = sym->type;
+            break;
+        }
+        
+        
+        case AST_CALL_EXPR: {
+            AstCallExpr *call = &expr->data.call_expr;
+            Type *callee_type = check_expression(ctx, scope, call->callee, NULL);
+            
+            if (!callee_type) return NULL;
+            
+            if (callee_type->kind != TYPE_FUNCTION) {
+                 TypeError err = {
+                    .kind = TE_NOT_CALLABLE,
+                    .span = call->callee->span,
+                    .filename = ctx->filename,
+                    .as.bad_usage.actual = callee_type
+                };
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+
+            // Argument Check
+            size_t param_count = callee_type->as.func.param_count;
+            size_t arg_count = call->args ? call->args->count : 0;
+
+            
+            if (arg_count != param_count) {
+                TypeError err = {
+                    .kind = TE_ARG_COUNT_MISMATCH,
+                    .span = expr->span,
+                    .filename = ctx->filename,
+                    .as.arg_count = {
+                        .expected = param_count,
+                        .actual = arg_count
+                    }
+                };
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+
+            for (size_t i = 0; i < arg_count; i++) {
+                AstNode *arg = *(AstNode**)dynarray_get(call->args, i);
+                Type *param_type = callee_type->as.func.params[i];
+
+                // Check argument against parameter type
+                Type *arg_type = check_expression(ctx, scope, arg, param_type);
+
+                if (arg_type && param_type && arg_type != param_type) {
+                    TypeError err = {
+                        .kind = TE_TYPE_MISMATCH,
+                        .span = arg->span,
+                        .filename = ctx->filename,
+                        .as.mismatch = {
+                            .expected = param_type,
+                            .actual = arg_type
+                        }
+                    };
+                    dynarray_push_value(ctx->errors, &err);
+                }
+            }
+            
+            result_type = callee_type->as.func.return_type;
+            break;
+        }
+
+        case AST_SUBSCRIPT_EXPR: {
+            AstSubscriptExpr *subscript = &expr->data.subscript_expr;
+            Type *base_type = check_expression(ctx, scope, subscript->target, NULL);
+            Type *index_type = check_expression(ctx, scope, subscript->index, NULL);
+            
+            if (!base_type) return NULL;
+
+            if (base_type->kind != TYPE_ARRAY && base_type->kind != TYPE_POINTER) {
+                TypeError err = {
+                    .kind = TE_NOT_INDEXABLE,
+                    .span = subscript->target->span,
+                    .filename = ctx->filename,
+                    .as.bad_usage.actual = base_type
+                };
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+      
+            if (base_type->kind == TYPE_ARRAY) {
+                result_type = base_type->as.array.base;
+            } else {
+                result_type = base_type->as.ptr.base;
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    
+
+
+
+    expr->type = result_type;
+    return result_type;
+}
+
+static void check_initializer(TypeCheckContext *ctx, Scope *scope, AstNode *initializer, Type *var_type) {
+    if (!initializer) return;
+    
+    Type *actual_type = check_expression(ctx, scope, initializer, var_type);
+    
+    // Type Mismatch Check
+    if (actual_type && var_type && actual_type != var_type) {
+        TypeError err = {
+            .kind = TE_TYPE_MISMATCH,
+            .span = initializer->span,
+            .filename = ctx->filename,
+            .as.mismatch = {
+                .expected = var_type,
+                .actual = actual_type
+            }
+        };
+        dynarray_push_value(ctx->errors, &err);
+    }
+}
+
+
+
+void check_variable_declaration(TypeCheckContext *ctx, Scope *scope, AstNode *var_node){
+    if (var_node->node_type != AST_VARIABLE_DECLARATION) return;
+
+    AstVariableDeclaration *var_decl = &var_node->data.variable_declaration;
+
+    Type *var_type = resolve_ast_type(ctx->store, scope, var_decl->type);
+    if (!var_type) {
+        const char *var_name = "<unknown>";
+        if (var_decl->intern_result && var_decl->intern_result->key) {
+             var_name = ((Slice*)var_decl->intern_result->key)->ptr;
+        }
+
+        
+
+        TypeError err = {
+            .kind = TE_VARIABLE_TYPE_RESOLUTION_FAILED,
+            .span = var_node->span,
+            .filename = ctx->filename,
+            .as.name.name = var_name
+        };
+
+        dynarray_push_value(ctx->errors, &err);
+        return;
+    }
+
+    var_node->type = var_type;
+    // Define variable symbol in the current scope
+    if (var_decl->intern_result) {
+        scope_define_symbol(scope, var_decl->intern_result, var_type, SYMBOL_VARIABLE);
+    }
+    
+    check_initializer(ctx, scope, var_node->data.variable_declaration.initializer, var_type);
+
+
+}
+
+static void check_function_body(TypeCheckContext *ctx, Scope *scope, AstNode *body_node, Type *expected_return_type) {
+    if (body_node->node_type != AST_BLOCK) return;
+
+    AstBlock *block = &body_node->data.block;
+
+    
+}
+
+static void check_function(TypeCheckContext *ctx, Scope *parent_scope, AstNode *func_node) {
+    AstFunctionDeclaration *decl = &func_node->data.function_declaration;
+    
+    // 1. Create a Scope for the arguments
+    // (Arguments are local variables inside the function)
+    Scope *fn_scope = scope_create(ctx->store->arena, parent_scope, 32, SCOPE_IDENTIFIERS);
+    
+    // 2. Define arguments in this scope
+    Type *func_type = func_node->type;
+    for (size_t i = 0; i < decl->params->count; i++) {
+        AstNode *param = *(AstNode**)dynarray_get(decl->params, i);
+        // The type was already resolved in Phase 1 and stored in param->type!
+        if (param->data.param.name_idx != -1) {
+            InternResult *name_rec = interner_get_result(ctx->identifiers, param->data.param.name_idx);
+            scope_define_symbol(fn_scope, name_rec, param->type, SYMBOL_VARIABLE);
+        }
+    }
+
+    // 3. Check the body
+    // We pass the expected return type so 'return' statements can be validated.
+    check_function_body(ctx, fn_scope, decl->body, func_type->as.func.return_type);
+}
+
+
+
+
+void typecheck_program(TypeCheckContext *ctx) {
+    if (!ctx || !ctx->program) return;
+    // Create Global Scope (root)
+    Arena *scope_arena = ctx->store->arena;
+    int global_count = (ctx->identifiers ? ctx->identifiers->dense_index_count : 0) + 64;
+    Scope *global_scope = scope_create(scope_arena, NULL, global_count, SCOPE_IDENTIFIERS);  
+
+    
+    // PASS 1: Resolve Function Signatures
+    resolve_program_functions(ctx, global_scope);
+
+    // PASS 2: Check Bodies and variable declarations
+    // cant do variables in Pass 1 because they might depend on functions declared later
+    // and because variables should only be valid from their point of declaration onward
+    // whereas function signatures are valid throughout the entire global scope
+    AstProgram *program = &ctx->program->data.program;
+    for (size_t i = 0; i < program->decls->count; i++) {
+        AstNode *decl = *(AstNode**)dynarray_get(program->decls, i);
+        switch (decl->node_type)
+        {
+        case AST_VARIABLE_DECLARATION:
+            check_variable_declaration(ctx, global_scope, decl);
+            break;
+        case AST_FUNCTION_DECLARATION:
+            check_function(ctx, global_scope, decl);
+            break;
+        default:
+            break;
+        }
     }
 }

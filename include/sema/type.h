@@ -18,12 +18,12 @@ typedef enum {
 } TypeKind;
 
 typedef enum {
-    PRIM_I8, PRIM_I16, PRIM_I32, PRIM_I64,
-    PRIM_U8, PRIM_U16, PRIM_U32, PRIM_U64,
+    PRIM_I32, PRIM_I64,
     PRIM_F32, PRIM_F64,
     PRIM_BOOL,
     PRIM_CHAR,
-    PRIM_VOID
+    PRIM_VOID,
+    PRIM_STR
 } PrimitiveKind;
 
 struct Type {
@@ -75,11 +75,11 @@ typedef struct TypeStore {
 
     // Fast access to common primitives so we don't need to look them up constantly
     Type *t_void;
-    Type *t_i8, *t_i16, *t_i32, *t_i64;
-    Type *t_u8, *t_u16, *t_u32, *t_u64;
+    Type *t_i32, *t_i64;
     Type *t_f32, *t_f64;
     Type *t_bool;
     Type *t_char;
+    Type *t_str;
 } TypeStore;
 
 TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, DenseArenaInterner *keywords);

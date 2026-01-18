@@ -6,7 +6,6 @@
 - [Overview](#overview)
 - [Type Representation](#type-representation)
 - [Scope System](#scope-system)
-- [The Universe Scope](#the-universe-scope)
 - [Type Resolution](#type-resolution)
 - [Cross references](#cross-references)
 
@@ -15,6 +14,11 @@ The semantic analysis phase is responsible for attaching meaning to the syntacti
 1.  **Scope Management**: Tracking visibility of symbols (variables, functions, types).
 2.  **Type Resolution**: Recursively determining the `Type*` for AST nodes.
 3.  **Correctness**: Ensuring identifiers are declared before use and types match interactions.
+
+### Pass structure (current)
+The type checker runs in two passes at the top level:
+1. **Signature pass**: Resolve all function signatures and register functions in the global scope.
+2. **Body pass**: Resolve global variable declarations and check each function body in a fresh function scope.
 
 ## Type Representation
 Types are structural and interned. Two identical types (e.g., `i32` and `i32`, or `(i32) -> void` and `(i32) -> void`) will share the same pointer address.
@@ -28,7 +32,8 @@ typedef enum {
     TYPE_POINTER,
     TYPE_ARRAY,
     TYPE_FUNCTION,
-    TYPE_STRUCT
+    TYPE_STRUCT,
+    TYPE_ENUM
 } TypeKind;
 
 struct Type {
@@ -37,7 +42,7 @@ struct Type {
     union {
         PrimitiveKind primitive;
         struct { Type *base; } ptr;
-        struct { Type *base; int64_t size; } array;
+        struct { Type *base; int64_t size; bool size_known; } array;
         struct { Type *return_type; Type **params; size_t param_count; } func;
         // ... struct/enum details
     } as;
@@ -48,6 +53,7 @@ struct Type {
 The `TypeStore` acts as the global context for all types. It holds:
 - The **Arena** where type memory is allocated.
 - The **Dense Interner** for deduplicating complex types (arrays, functions, pointers).
+- The **Primitive Registry** (`primitive_registry`) for fast name → primitive lookup.
 - Pre-allocated pointers to primitive singletons (`t_i32`, `t_void`, etc.) for fast access.
 
 ## Scope System
@@ -59,9 +65,9 @@ Defined in [`include/datastructures/scope.h`](../include/datastructures/scope.h)
 
 ```c
 typedef struct Scope {
-    Symbol **symbols;    // Dense array mapping InterResult index -> Symbol*
+    Symbol **symbols;    // Dense array mapping InternResult index -> Symbol*
     size_t capacity;
-    Scope *parent;       // Parent scope (NULL for Universe)
+    Scope *parent;       // Parent scope (NULL for Global)
     /* ... see scope.md for details on ScopeKind ... */
 } Scope;
 ```
@@ -70,8 +76,16 @@ typedef struct Scope {
 1.  **Global Scope**: File level. Contains functions/globals. (Type: `SCOPE_IDENTIFIERS`)
 2.  **Local Scopes**: Blocks. Contains local variables. (Type: `SCOPE_IDENTIFIERS`)
 
+### Entry points
+- `typecheck_program(ctx)` drives both passes.
+- `resolve_program_functions(ctx, global_scope)` resolves and registers function signatures.
+- `check_variable_declaration(ctx, scope, node)` resolves globals.
+
+### Context
+`TypeCheckContext` carries the program root, typestore, interners, filename, and the error list used for diagnostics.
+
 ## Primitive Registry (TypeStore)
-Primitive types are no longer stored in a "Universe Scope". Instead, they are registered directly in the `TypeStore`'s `primitive_registry` HashMap.
+Primitive types are registered directly in the `TypeStore`'s `primitive_registry` HashMap.
 
 - When the `TypeStore` is created, it populates `primitive_registry` with `Type*` for `i32`, `f64`, etc.
 - The registry keys are the canonical pointers from the `Identifiers` (and `Keywords`) interner.
@@ -117,6 +131,9 @@ The `TypeStore` ensures that types are **canonical**.
 // 2. Construct Type{ .kind = TYPE_POINTER, .base = t_i32 }
 // 3. Intern(new_type) -> return canonical pointer
 ```
+
+## Diagnostics
+Type errors are collected in `TypeCheckContext.errors` (a `DynArray` of `TypeError`). Reporting uses `print_type_error` after the semantic pass to render a filename + span excerpt.
 
 
 ## Cross references

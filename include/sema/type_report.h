@@ -15,6 +15,7 @@ typedef enum {
     // Type mismatch errors
     TE_TYPE_MISMATCH,      // "Expected 'i32', found 'bool'"
     TE_RETURN_MISMATCH,    // "Function declared to return 'i32' but returns 'void'"
+    TE_VARIABLE_TYPE_RESOLUTION_FAILED, // "Failed to resolve variable type"
     
     // Operator errors
     TE_BINOP_MISMATCH,     // "Invalid operands for '+': 'i32' and 'str'"
@@ -25,7 +26,8 @@ typedef enum {
     TE_NOT_INDEXABLE,      // "Type 'bool' is not an array or pointer"
     TE_FIELD_ACCESS,       // "Type 'Point' has no field named 'z'"
     
-    TE_CONST_ASSIGN        // "Cannot assign to constant 'x'"
+    TE_CONST_ASSIGN,       // "Cannot assign to constant 'x'"
+    TE_ARG_COUNT_MISMATCH  // "Expected 3 arguments, found 2"
 } TypeErrorKind;
 
 typedef struct {
@@ -35,7 +37,7 @@ typedef struct {
     
     // Specific details for each error type
     union {
-        // TE_UNKNOWN_TYPE, TE_UNDECLARED, TE_REDECLARATION, TE_FIELD_ACCESS
+        // TE_UNKNOWN_TYPE, TE_UNDECLARED, TE_REDECLARATION, TE_FIELD_ACCESS, TE_VARIABLE_TYPE_RESOLUTION_FAILED
         struct {
             const char *name; // The identifier name
         } name;
@@ -63,6 +65,13 @@ typedef struct {
         struct {
             Type *actual;
         } bad_usage;
+
+        // TE_ARG_COUNT_MISMATCH
+        struct {
+            size_t expected;
+            size_t actual;
+        } arg_count;
+
     } as;
 } TypeError;
 

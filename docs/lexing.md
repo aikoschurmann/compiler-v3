@@ -17,7 +17,7 @@
 The lexer turns raw source text into a stream of tokens with type, text, and source location. It’s a single pass over the input buffer with minimal branching and no per-token heap allocation.
 
 ## Core data structures
-Defined in [`include/token.h`](../include/token.h):
+Defined in [`include/lexing/token.h`](../include/lexing/token.h):
 
 ```c
 typedef struct {
@@ -37,7 +37,7 @@ Notes:
 
 Categories used in this compiler:
 - Keywords: `fn, if, else, while, for, return, break, continue, const, true, false`.
-- Types (as tokens): `i32, i64, bool, f32, f64, string, char`.
+- Types (as tokens): `i32, i64, bool, f32, f64, str, char`.
 - Operators: single and multi-char (e.g., `+`, `+=`, `++`, `==`, `->`, `&&`, `||`).
 - Punctuation: `(){}[],:;.|` and `.`.
 - Literals: integer, float, string, char.
@@ -62,6 +62,7 @@ High-level steps per token:
 Two interners are commonly used:
 - `KW_I`: pre-seeded [interner](interner.md) for keywords. `meta` holds the `TokenType`.
 - `ID_I`: general [interner](interner.md) for identifiers (stores one canonical copy per spelling).
+- `STR_I`: interner for string literals (stores the unescaped, canonical string).
 
 Keyword setup (once):
 ```c
@@ -94,6 +95,10 @@ if (hit) {
   tok.record = id_rec;
 }
 ```
+
+String literals:
+- The raw slice includes quotes; the lexer unescapes the content into the arena.
+- The unescaped content is interned into the strings interner and stored in `Token.record` for `TOK_STRING_LIT`.
 
 Benefits:
 - Avoids N× `strncmp` keyword chains, does a single hash+lookup.

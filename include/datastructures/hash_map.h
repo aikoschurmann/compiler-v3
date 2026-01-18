@@ -9,7 +9,12 @@
    ----------------------------- */
 
 /* Standard pointer identity hash/cmp for when keys are local pointers */
-static inline size_t ptr_hash(void *key) { return (size_t)key; }
+static inline size_t ptr_hash(void *key) { 
+    // Shift right to remove alignment zeros (usually 3 or 4 bits)
+    // and mix slightly to avoid collisions in low buckets
+    size_t k = (size_t)key;
+    return (k >> 4) ^ (k >> 9);
+}
 static inline int ptr_cmp(void *a, void *b) { return (a == b) ? 0 : 1; }
 
 typedef struct {

@@ -6,7 +6,6 @@
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Scope Kinds](#scope-kinds)
-- [The Universe Scope](#the-universe-scope)
 - [Symbol Lookup Strategy](#symbol-lookup-strategy)
 - [Data Structures](#data-structures)
 
@@ -42,7 +41,7 @@ The scope system deals with user-defined symbols.
 ```c
 typedef enum {
     SCOPE_IDENTIFIERS, // Standard scopes (Global, Local)
-    SCOPE_KEYWORDS     // Deprecated (used to be Universe)
+    SCOPE_KEYWORDS     // Reserved for keyword-only scopes (currently unused)
 } ScopeKind;
 ```
 
@@ -50,12 +49,10 @@ typedef enum {
 
 ## Primitives and Registry
 
-Previously, a "Universe Scope" (Keyword Scope) was used for primitives. This has been replaced by a **Primitive Registry** inside the `TypeStore`.
+Primitives are resolved via the **Primitive Registry** inside the `TypeStore`.
 
 1.  **Registry**: A fast HashMap used by `resolve_ast_type` to map interner keys (like the pointer for `"i32"`) directly to Type objects.
-2.  **No Universe Parent**: The Global Scope has no parent. Primitive resolution happens *before* scope lookup.
-
-This change avoids complexity with "Split Interners" (tokens being Keywords but needing to be looked up in Identifier scopes). All primitives are now registered using the keys available to the resolution phase (Identifiers or Keywords).
+2.  **Lookup Order**: Primitive resolution happens *before* scope lookup.
 
 ## Symbol Lookup Strategy
 
@@ -79,7 +76,7 @@ When you ask for a symbol:
 ## Data Structures
 
 ### The Scope Struct
-The scope uses a **Dense Array Map** strategy. since identifiers are interned into the `DenseArenaInterner`, every unique identifier has a unique `dense_index`. We use this index to directly access the symbol array.
+The scope uses a **Dense Array Map** strategy. Since identifiers are interned into the `DenseArenaInterner`, every unique identifier has a unique `dense_index`. We use this index to directly access the symbol array.
 
 ```c
 struct Scope {
@@ -90,7 +87,7 @@ struct Scope {
 };
 ```
 
-This makes symbol lookup exceptionally fast (Array Access), avoiding a second hash computation during semantic analysis.
+This makes symbol lookup exceptionally fast (array access), avoiding a second hash computation during semantic analysis. The symbol array grows on demand when a new identifier index exceeds the current capacity.
 
 ### The Symbol Struct
 The `Symbol` holds the semantic information.

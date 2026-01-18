@@ -225,7 +225,8 @@ TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, Dense
     ts->arena = arena;
     
     // Create Hashmap for the interner
-    HashMap *tm = hashmap_create(256); 
+    // 64 buckets is fine for initial set of types. It will grow.
+    HashMap *tm = hashmap_create(64); 
     if (!tm) return NULL;
 
     // Create Interner
@@ -237,37 +238,26 @@ TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, Dense
     // Create canonical primitives
     ts->t_i32 = create_primitive(ts, PRIM_I32);
     ts->t_i64 = create_primitive(ts, PRIM_I64);
-    ts->t_u32 = create_primitive(ts, PRIM_U32);
-    ts->t_u64 = create_primitive(ts, PRIM_U64);
+
     ts->t_f32 = create_primitive(ts, PRIM_F32);
     ts->t_f64 = create_primitive(ts, PRIM_F64);
+
     ts->t_bool = create_primitive(ts, PRIM_BOOL);
-    ts->t_void = create_primitive(ts, PRIM_VOID);
     ts->t_char = create_primitive(ts, PRIM_CHAR);
+    ts->t_str = create_primitive(ts, PRIM_STR);
     
-    // Additional small ints
-    ts->t_i8 = create_primitive(ts, PRIM_I8);
-    ts->t_i16 = create_primitive(ts, PRIM_I16);
-    ts->t_u8 = create_primitive(ts, PRIM_U8);
-    ts->t_u16 = create_primitive(ts, PRIM_U16);
+    ts->t_void = create_primitive(ts, PRIM_VOID);
+
+   
 
     // Register KEYWORDS (lexed as TOK_I32 etc.)
-    // These must be registered using the KEYWORDS interner because the AST contains keys from there.
     register_prim(ts, keywords, "i32", ts->t_i32);
     register_prim(ts, keywords, "i64", ts->t_i64);
     register_prim(ts, keywords, "f32", ts->t_f32);
     register_prim(ts, keywords, "f64", ts->t_f64);
     register_prim(ts, keywords, "bool", ts->t_bool);
     register_prim(ts, keywords, "char", ts->t_char);
-
-    // Register IDENTIFIERS (not keywords, if supported)
-    register_prim(ts, identifiers, "void", ts->t_void);
-    register_prim(ts, identifiers, "i8", ts->t_i8);
-    register_prim(ts, identifiers, "i16", ts->t_i16);
-    register_prim(ts, identifiers, "u8", ts->t_u8);
-    register_prim(ts, identifiers, "u16", ts->t_u16);
-    register_prim(ts, identifiers, "u32", ts->t_u32);
-    register_prim(ts, identifiers, "u64", ts->t_u64);
-
+    register_prim(ts, keywords, "str", ts->t_str);
+    
     return ts;
 }

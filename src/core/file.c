@@ -62,13 +62,26 @@ int read_line_from_file(const char *filename, size_t line_no,
     return -1;
 }
 
-void print_source_excerpt(const char *filename, size_t line_no, size_t col) {
+void print_source_excerpt_span(const char *filename, size_t line_no, size_t start_col, size_t end_col) {
     if (!filename || line_no == 0) return;
     char buf[512]; size_t len = 0;
     if (read_line_from_file(filename, line_no, buf, sizeof(buf), &len) != 0) return;
-    if (len > 0 && buf[len-1] == '\n') { buf[len-1] = '\0'; len--; }
+    if (len > 0 && buf[len-1] == '\n') { buf[len - 1] = '\0'; len--; }
+
     fprintf(stderr, "\x1b[33m%4zu\x1b[0m | %s\n", line_no, buf);
     fprintf(stderr, "     | ");
-    for (size_t i = 1; i < col; i++) fputc(' ', stderr);
-    fprintf(stderr, "\x1b[31m^\x1b[0m\n");
+    
+    // Spaces until start
+    for (size_t i = 1; i < start_col; i++) fputc(' ', stderr);
+    
+    // Underline
+    fprintf(stderr, "\x1b[31m");
+    size_t width = (end_col >= start_col) ? (end_col - start_col) : 1;
+    if (width == 0) width = 1; 
+    for (size_t i = 0; i < width; i++) fputc('^', stderr);
+    fprintf(stderr, "\x1b[0m\n");
+}
+
+void print_source_excerpt(const char *filename, size_t line_no, size_t col) {
+    print_source_excerpt_span(filename, line_no, col, col + 1);
 }

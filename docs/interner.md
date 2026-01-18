@@ -129,10 +129,10 @@ Interning a composite type (e.g., function type):
 ```c
 // Build a Type prototype (binary snapshot) and intern it
 Type proto = {0};
-proto.kind = TY_FUNC;
-proto.u.func.param_count = n;
-proto.u.func.params = params_canonical_ptrs; // array of canonical Type*
-proto.u.func.ret = ret_type_canonical;
+proto.kind = TYPE_FUNCTION;
+proto.as.func.param_count = n;
+proto.as.func.params = params_canonical_ptrs;   // array of canonical Type*
+proto.as.func.return_type = ret_type_canonical;
 
 Slice s = { (const char*)&proto, (uint32_t)sizeof(Type) };
 InternResult *ir = intern(TYPE_I, &s, NULL);
@@ -186,7 +186,7 @@ typedef struct DenseArenaInterner {
 } DenseArenaInterner;
 ```
 ### InternResult
-- key: canonical, arena-owned representation (e.g., for strings a Slice* whose .ptr is a NUL-terminated char*; for type snapshots a Slice* over the canonical bytes).
+- key: canonical, arena-owned representation (typically a Slice*). For string interners, the Slice points at a NUL-terminated canonical string. For the type interner, the Slice points at a canonical `Type*` stored in `Slice->ptr`.
 - entry: pointer to Entry carrying metadata and the stable dense index.
 
 ### Entry
@@ -207,6 +207,7 @@ typedef struct DenseArenaInterner {
 - `intern_peek(interner, slice)` – lookup without insert (NULL if absent).
 - `interner_foreach(interner, callback, user)` – iterate dense order.
 - `interner_get_cstr(interner, idx)` – convenience for string keys.
+- `interner_get_result(interner, idx)` – get InternResult* by dense index.
 - `intern_table_destroy(interner, free_key, free_value)` – teardown (arena free if desired).
 
 

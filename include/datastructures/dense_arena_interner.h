@@ -152,6 +152,15 @@ InternResult* intern_peek(DenseArenaInterner *interner, Slice *slice);
  */
 const char *interner_get_cstr(DenseArenaInterner *interner, int idx);
 
+/**
+ * @brief Return the InternResult pointer for a given dense index.
+ * 
+ * @param interner The interner.
+ * @param idx The dense index.
+ * @return InternResult* The intern result at that index, or NULL if invalid.
+ */
+InternResult *interner_get_result(DenseArenaInterner *interner, int idx);
+
 
 /**
  * @brief Iterate over all interned entries in dense order.

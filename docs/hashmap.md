@@ -6,7 +6,7 @@
 A separate-chaining hash map backed by dynamic arrays:
 - `bucket_count` buckets; each bucket is a `DynArray` of `KeyValue` pairs.
 - Caller supplies `hash(void*)` and `cmp(void*, void*)` for arbitrary key types.
-- No automatic resizing; call `hashmap_rehash` when you decide to grow.
+- `hashmap_put` automatically rehashes when the load factor exceeds ~0.75.
 
 ## Core data structures
 ```c
@@ -68,9 +68,9 @@ hashmap_destroy(map, /*free_key*/NULL, /*free_value*/NULL);
 
 
 ## When to rehash
-Trigger a rehash when `size / bucket_count` (load factor) exceeds ~0.75 for performance. A simple check is `if (size * 4 >= 3 * bucket_count) rehash(...)`. Policy is left to the caller.
+Rehashing is handled inside `hashmap_put` when the load factor exceeds ~0.75, but you can still call `hashmap_rehash` explicitly if you want a different policy.
 
 ## Limitations
-- No automatic growth (caller must call `hashmap_rehash`).
+- Growth policy is fixed at ~0.75 load factor in `hashmap_put`.
 - Keys assumed stable (no mutation affecting their hash while stored).
 - If the map owns keys/values, provide destructors to `hashmap_destroy`; otherwise pass NULLs.

@@ -45,7 +45,7 @@ Why not operate directly on tokens? Tokens are flat; the AST groups them into hi
 Allocation: All nodes are arena‑allocated for fast creation and O(1) bulk teardown.
 
 ## Core data structures
-Parser state and errors (from [`include/parser.h`](../include/parser.h)):
+Parser state and errors (from [`include/parsing/parser.h`](../include/parsing/parser.h)):
 ```c
 typedef struct {
   DynArray   *tokens;   /* DynArray of Token (borrowed) */
@@ -63,15 +63,15 @@ typedef struct {
 } ParseError;
 ```
 
-Key AST shapes (from [`include/ast.h`](../include/ast.h)):
+Key AST shapes (from [`include/parsing/ast.h`](../include/parsing/ast.h)):
 ```c
 typedef enum { /* …see ast.h… */ AST_IDENTIFIER, AST_FUNCTION_DECLARATION, AST_PARAM, AST_TYPE, /* … */ } AstNodeType;
 
-typedef struct { InternResult *name_rec; } AstIdentifier;
+typedef struct { InternResult *intern_result; } AstIdentifier;
 
 typedef struct {
   AstNode *return_type;    /* AST_TYPE */
-  InternResult *name_rec;  /* interned function name */
+  InternResult *intern_result;  /* interned function name */
   DynArray *params;        /* AstParam nodes */
   AstNode *body;           /* AstBlock */
 } AstFunctionDeclaration;
@@ -86,7 +86,7 @@ typedef struct AstType {
   AstTypeKind kind;
   Span span;
   union {
-    struct { InternResult *rec; } base;               /* name */
+    struct { InternResult *intern_result; } base;     /* name */
     struct { AstNode *target; } ptr;                  /* *T */
     struct { AstNode *elem; AstNode *size_expr; } array; /* T[n] or T[] */
     struct { DynArray *param_types; AstNode *return_type; } func; /* (T..)->U */
@@ -100,7 +100,7 @@ Notes:
 - Node lists use [DynArray](dynarray.md).
 
 ## Core operations
-Public API (from `include/parser.h` and `include/parse_statements.h`):
+Public API (from `include/parsing/parser.h` and `include/parsing/parse_statements.h`):
 - Create/free: `parser_create`, `parser_free`.
 - Token access: `current_token`, `peek`.
 - Advance/consume: `parser_advance`, `consume`, `parser_match`.
@@ -115,7 +115,7 @@ Creation pattern:
 - Parser reuses the lexer’s canonical identifier record (`Token.record`) directly:
   - `AstIdentifier.name_rec`, `AstFunctionDeclaration.name_rec`.
   - `AstParam.name_idx` stores dense indices when useful.
-  - `AstType.u.base.rec` holds interned type names.
+  - `AstType.u.base.intern_result` holds interned type names.
 
 
 ## Spans and errors

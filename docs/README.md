@@ -32,28 +32,35 @@ Keep these infrastructure docs handy while reading the above:
   - [arena.md](./arena.md)
 
 ## Pipeline at a glance
-- File load → Lexing → Tokens (with interned identifiers) → Parsing → AST
+- File load → Lexing → Tokens (with interned identifiers) → Parsing → AST → Semantic analysis (type resolution)
 - Each token carries:
   - TokenType, Slice (view into source), Span (source range), InternResult* (for identifiers)
-- AST nodes are arena-allocated; identifier/type names store interner records.
+- AST nodes are arena-allocated; identifier/type names store interner records and are resolved to `Type*` during semantics.
+
+## Codebase map (where to look)
+- `src/main.c` — driver, timing, and top-level pipeline wiring.
+- `src/lexing/` — lexer and tokenization helpers.
+- `src/parsing/` — parser, AST construction, and parse entry points.
+- `src/sema/` — type store, type resolution, and diagnostics.
+- `src/datastructures/` — arena, dynarray, hashmap, interner, scope.
 
 ### Example
-See the root README’s Pipeline example for tokens, AST, and type internment:
+See the root README’s Pipeline example for tokens, AST, and type resolution output:
 [../README.md#pipeline-example](../README.md#pipeline-example)
 
 ## Reference modules
-- [include/token.h](../include/token.h) — Token, TokenType, Slice, Span
-- [include/parser.h](../include/parser.h) — Parser state and ParseError helpers
-- [include/ast.h](../include/ast.h) — AST node kinds and payloads
-- [include/parse_statements.h](../include/parse_statements.h) — parse_* entry points and precedence chain
-- [include/dense_arena_interner.h](../include/dense_arena_interner.h) — InternResult, DenseArenaInterner
-- [include/dynamic_array.h](../include/dynamic_array.h) — DynArray API
-- [include/hash_map.h](../include/hash_map.h) — HashMap API
-- [include/arena.h](../include/arena.h) — Arena API
+- [include/lexing/token.h](../include/lexing/token.h) — Token, TokenType, Slice, Span
+- [include/parsing/parser.h](../include/parsing/parser.h) — Parser state and ParseError helpers
+- [include/parsing/ast.h](../include/parsing/ast.h) — AST node kinds and payloads
+- [include/parsing/parse_statements.h](../include/parsing/parse_statements.h) — parse_* entry points and precedence chain
+- [include/datastructures/dense_arena_interner.h](../include/datastructures/dense_arena_interner.h) — InternResult, DenseArenaInterner
+- [include/datastructures/dynamic_array.h](../include/datastructures/dynamic_array.h) — DynArray API
+- [include/datastructures/hash_map.h](../include/datastructures/hash_map.h) — HashMap API
+- [include/datastructures/arena.h](../include/datastructures/arena.h) — Arena API
 
 ### Grammar snippets (BNF)
 - Type-focused examples live in [`input/type_test.bnf`](../input/type_test.bnf).
-- A full language grammar file (`input/lang.bnf`) is planned; for now, the parser code (`include/parse_statements.h`) reflects the authoritative grammar structure.
+- The authoritative grammar structure is reflected in the parser code (`include/parsing/parse_statements.h`); `input/lang.bnf` provides a snapshot of the syntax.
 
 ## Source-of-truth notes
 - Headers under `include/` are authoritative for types and function signatures.

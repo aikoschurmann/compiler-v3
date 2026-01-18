@@ -104,10 +104,16 @@ int main(int argc, char **argv) {
 
     if(err.message){
         print_parse_error(&err);
+        parser_free(parser);
+        lexer_destroy(lexer);
+        arena_destroy(arena);
+        free(src);
+        return EXIT_PARSE;
     }
 
     if (opts.print_ast && program) {
         print_ast(program, 0, lexer->keywords, lexer->identifiers, lexer->strings);
+        printf("\n");
     }
 
     /* ---------------------------------------------------------
@@ -117,10 +123,26 @@ int main(int argc, char **argv) {
     double t4 = now_seconds();
     
     TypeStore *store = typestore_create(arena, lexer->identifiers, lexer->keywords);
+    TypeCheckContext type_ctx = typecheck_context_create(arena, program, store, lexer->identifiers, lexer->keywords, path);
     
     // Resolve all types in the AST
     if (program) {
-        resolve_program_functions(store, (AstProgram*)&program->data.program, lexer->identifiers, lexer->keywords);
+        typecheck_program(&type_ctx);
+        
+        // Report
+        bool has_errors = false;
+        if (type_ctx.errors->count > 0) {
+             has_errors = true;
+             for (size_t i = 0; i < type_ctx.errors->count; i++) {
+                 TypeError *e = (TypeError*)dynarray_get(type_ctx.errors, i);
+                 e->filename = path;
+                 print_type_error(e);
+             }
+        }
+
+        if (has_errors) {
+             return EXIT_TYPE;
+        }
     }
     double t5 = now_seconds();
     size_t arena_used_sema = arena_total_allocated(arena) - arena_used_sema_start;

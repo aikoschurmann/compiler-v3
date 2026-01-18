@@ -1,7 +1,7 @@
 # Simple Compiler (Work in progress)
 
 A small, fast compiler front‑end written in C. Current pipeline:
-File → Lexing → Parsing → (Type internment preview) → Report
+File → Lexing → Parsing → Semantic analysis (type resolution) → Report
 
 This README gives a practical overview: how to build and run, what’s implemented, where things live, and where to read more.
 
@@ -34,7 +34,7 @@ Usage: ./out/compiler <file> [options]
 Options:
   -t, --tokens    Print all tokens
   -a, --ast       Print the parsed AST (after parsing)
-  -y, --types     Print type internment results
+  -y, --types     Print type store dump (interned types)
   -T, --time      Print lex/parse timing and throughput
   -h, --help      Show this help
   -v, --version   Print version and exit
@@ -47,7 +47,7 @@ Options:
 - Token stream stored in a DynArray
 - Dense arena‑backed interner for identifiers/keywords/strings
 - Recursive‑descent parser that builds an arena‑allocated AST
-- Early “type internment” showcase (dense handles and signatures)
+- Semantic analysis: type resolution + interning, scope setup
 - Pretty benchmarking report (timings, memory, throughput)
 
 ---
@@ -87,8 +87,12 @@ Key modules:
 1) Read file into memory.
 2) Lex: produce tokens with Slice+Span and an InternResult* for identifiers.
 3) Parse: build an AST (arena‑allocated, spans preserved, canonical identifiers).
-4) Types (preview): intern and print type signatures/dense indices.
+4) Semantic analysis: resolve types, build scopes, and intern type signatures.
 5) Report: optional timing and memory summary.
+
+Notes:
+- `--types` prints the type store dump.
+- `--ast` prints the parsed AST before semantics.
 
 ---
 
@@ -161,39 +165,8 @@ Program [1:1-3:2]
 │   │   │   │   │   │   │   │   └── name: 'b' (I-index:2)
 ```
 
-Type internment (dense handles):
-```plaintext
-Total types interned: 9
-
-Interned Types:
-  [0] i32 (primitive)
-  [1] i64 (primitive)
-  [2] f32 (primitive)
-  [3] f64 (primitive)
-  [4] bool (primitive)
-  [5] char (primitive)
-  [6] str (primitive)
-  [7] () -> NULL (function)
-  [8] (i64, i64) -> i64 (function)
-
-Function Symbol Mapping:
-
-  test:
-    • Symbol ptr: 0x14800c7a0
-    • Symbol Name Dense Index: [0]
-    • Type Index: [7] () -> NULL (function)
-    • Parameters (0):
-    • Return Type: none
-
-  mul:
-    • Symbol ptr: 0x14800c818
-    • Symbol Name Dense Index: [1]
-    • Type Index: [8] (i64, i64) -> i64 (function)
-    • Parameters (2):
-       [1] i64 (primitive)
-       [1] i64 (primitive)
-    • Return Type: [1] → i64 (primitive)
-```
+Type store dump (interned types):
+- `--types` prints the interned type table and any resolved function signatures.
 
 ---
 

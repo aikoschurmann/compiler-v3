@@ -1,2 +1,44 @@
-fn main(x: i32, y: f64) -> void {
+var: i32[] = {{1, 2}, {3, 4}};
+var: i64[] = {{1, 2}, {3, 4}};
+var: f32[] = {{1.1, 2.2}, {3.3, 4.4}};
+var: f64[] = {{1.1, 2.2}, {3.3, 4.4}};
+
+fn partition(a: i32[], lo: i32, hi: i32) -> i32 {
+    pivot: i32 = a[hi];
+    return partition_rec(a, lo, hi, lo, lo - 1, pivot);
+}
+
+fn partition_rec(a: i32[], lo: i32, hi: i32, j: i32, i: i32, pivot: i32) -> i32 {
+
+    if (j >= hi) {
+        tmp: i32 = a[i + 1];
+        a[i + 1] = a[hi];
+        a[hi] = tmp;
+        return i + 1;
+    }
+
+    if (a[j] < pivot) {
+        i2: i32 = i + 1;
+
+        tmp2: i32 = a[i2];
+        a[i2] = a[j];
+        a[j] = tmp2;
+
+        return partition_rec(a, lo, hi, j + 1, i2, pivot);
+    } else {
+        return partition_rec(a, lo, hi, j + 1, i, pivot);
+    }
+}
+
+fn quicksort(a: i32[], lo: i32, hi: i32) {
+    if (lo < hi) {
+        p: i32 = partition(a, lo, hi);
+        quicksort(a, lo, p - 1);
+        quicksort(a, p + 1, hi);
+    }
+}
+
+fn main() {
+    arr: i32[9] = { 30, 3, 4, 20, 5, 1, 17, 12, 9 };
+    quicksort(arr, 0, 8);
 }

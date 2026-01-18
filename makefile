@@ -63,13 +63,20 @@ debug:
 
 
 
-# Build main executable (exclude lexer_test.o if present)
-$(OUT_DIR)/$(NAME): $(filter-out $(OBJ_DIR)/lexer_test.o,$(OBJ_FILES))
+# Build main executable (exclude test objects)
+# We filter out any objects that come from the tests/ directory or lexer_test/parser_test
+MAIN_OBJ_FILES := $(filter-out $(OBJ_DIR)/tests/%,$(SRC_OBJ_FILES))
+# Also filter out any potential test files if they were mixed in (current structure separates them)
+
+$(OUT_DIR)/$(NAME): $(filter-out $(TEST_OBJ_FILES),$(SRC_OBJ_FILES))
 	@mkdir -p $(OUT_DIR)
 	$(CC) $^ -o $@ $(LDFLAGS)
 
-# Build lexer test executable (exclude main.o)
-$(OUT_DIR)/lexer_test: $(filter-out $(OBJ_DIR)/main.o,$(OBJ_FILES))
+# Build the main test runner
+TEST_SRC_FILES := $(wildcard test/*.c)
+TEST_OBJ_FILES := $(patsubst test/%.c,$(OBJ_DIR)/test/%.o,$(TEST_SRC_FILES))
+
+$(OUT_DIR)/test_runner: $(filter-out $(OBJ_DIR)/main.o,$(SRC_OBJ_FILES)) $(TEST_OBJ_FILES)
 	@mkdir -p $(OUT_DIR)
 	$(CC) $^ -o $@ $(LDFLAGS)
 
@@ -79,7 +86,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Generic rule for compiling tests
-$(OBJ_DIR)/%.o: $(TEST_DIR)/%.c
+$(OBJ_DIR)/test/%.o: test/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -91,13 +98,8 @@ clean:
 
 # Run the compiled program (default run)
 run: all
-	./$(OUT_DIR)/$(NAME) ./input/test.txt --types --ast --tokens --time
+	./$(OUT_DIR)/$(NAME) ./input/test.rs --types
 
-bench: all
-	./$(OUT_DIR)/$(NAME) ./input/test.txt 
-
-
-# Run timing-only (example)
-time: all
-	./$(OUT_DIR)/$(NAME) ./input/test.txt --time
+test: $(OUT_DIR)/test_runner
+	./$(OUT_DIR)/test_runner
 
