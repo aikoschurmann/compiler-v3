@@ -128,6 +128,11 @@ int main(int argc, char **argv) {
     // Resolve all types in the AST
     if (program) {
         typecheck_program(&type_ctx);
+        // print ast again with types
+        if (opts.print_ast && program) {
+            print_ast(program, 0, lexer->keywords, lexer->identifiers, lexer->strings);
+            printf("\n");
+        }
         
         // Report
         bool has_errors = false;

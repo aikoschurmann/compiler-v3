@@ -45,22 +45,34 @@ static void type_print_internal(FILE *f, const Type *type) {
 
     switch (type->kind) {
         case TYPE_PRIMITIVE:
-            fprintf(f, "%s%s" RESET, COL_PRIM, get_primitive_name(type->as.primitive));
+            fprintf(f, "%s", get_primitive_name(type->as.primitive));
             break;
 
-        case TYPE_POINTER:
+        case TYPE_POINTER: {
+            int needs_parens = (type->as.ptr.base->kind == TYPE_FUNCTION);
+            
+            if (needs_parens) fprintf(f, "(");
             type_print_internal(f, type->as.ptr.base);
+            if (needs_parens) fprintf(f, ")");
+            
             fprintf(f, "*");
             break;
+        }
 
-        case TYPE_ARRAY:
+        case TYPE_ARRAY: { 
+            int needs_parens = (type->as.array.base->kind == TYPE_FUNCTION);
+
+            if (needs_parens) fprintf(f, "(");
             type_print_internal(f, type->as.array.base);
+            if (needs_parens) fprintf(f, ")");
+
             fprintf(f, "[");
             if (type->as.array.size_known) {
-                fprintf(f, "%s%lld" RESET, COL_NUM, (long long)type->as.array.size);
+                fprintf(f, "%lld", (long long)type->as.array.size);
             }
             fprintf(f, "]");
             break;
+        }
             
         case TYPE_FUNCTION:
             fprintf(f, "(");
@@ -78,7 +90,7 @@ static void type_print_internal(FILE *f, const Type *type) {
             break;
 
         case TYPE_STRUCT:
-             fprintf(f, "%sstruct %s%s" RESET, COL_KEYWORD, COL_STRUCT, type->as.user.name ? type->as.user.name : "anonymous");
+             fprintf(f, "struct %s", type->as.user.name ? type->as.user.name : "anonymous");
              break;
         
         default:

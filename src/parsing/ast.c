@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "type_print.h"
 #include <stdio.h>
 
 /* Helper functions to convert enums to strings */
@@ -283,14 +284,18 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
 
     print_tree_prefix(depth, is_last);
     printf("%s", node_type_to_string(node->node_type));
-    
     // Add span info inline
     if (node->span.start_line > 0) {
         printf(" [%zu:%zu-%zu:%zu]", 
                node->span.start_line, node->span.start_col, 
                node->span.end_line, node->span.end_col);
     }
-    
+    // Add type info if available
+    if (node->type) {
+        printf(" \033[36mtype=");
+        type_print(stdout, node->type);
+        printf("\033[0m");
+    }
     // Add const info if relevant
     if (node->is_const_expr) {
         printf(" (const:");
@@ -310,7 +315,6 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
         }
         printf(")");
     }
-    
     printf("\n");
     
     // Print node-specific data as child nodes
