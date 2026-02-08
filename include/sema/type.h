@@ -84,3 +84,14 @@ typedef struct TypeStore {
 
 TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, DenseArenaInterner *keywords);
 InternResult *intern_type(TypeStore *ts, Type *prototype);
+
+// Returns true for i8, u8, i16, i32, i64, etc.
+bool type_is_integer(Type *t);
+// Returns true for f32, f64
+bool type_is_float(Type *t);
+// Returns true if the type is a boolean
+bool type_is_bool(Type *t);
+// Returns true if the type is a char
+bool type_is_char(Type *t);
+// Returns true if 'source' can be implicitly promoted to 'target'
+bool type_can_implicit_cast(Type *target, Type *source);

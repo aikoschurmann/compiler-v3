@@ -261,3 +261,4 @@ TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, Dense
     
     return ts;
 }
+

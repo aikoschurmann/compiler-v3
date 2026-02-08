@@ -247,8 +247,10 @@ AstNode *parse_variable_declaration(Parser *p, ParseError *err) {
 
     /* optional initializer */
     AstNode *initializer = NULL;
+    
+    // FIX: parser_match consumes the token, so we should NOT call consume() again
     if (parser_match(p, TOK_ASSIGN)) {
-        Token *assign_tok = consume(p, TOK_ASSIGN);
+        // Token *assign_tok = consume(p, TOK_ASSIGN); // REMOVED (Double consume bug)
 
         Token *token = current_token(p);
         if (token && token->type == TOK_LBRACE) {
@@ -1181,6 +1183,10 @@ AstNode *parse_statement(Parser *p, ParseError *err) {
         case TOK_FN:
             if (err) create_parse_error(err, p, "function declarations are not allowed inside statements or blocks", tok);
             return NULL;
+        case TOK_CONST:
+            /* FIX: Allow const declarations as statements */
+            stmt = parse_declaration_stmt(p, err);
+            break;
         case TOK_IDENTIFIER: {
             Token *next = peek(p, 1);
             if (!next) {

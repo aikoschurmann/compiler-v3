@@ -20,30 +20,36 @@ typedef enum {
     SYMBOL_VARIABLE      // General runtime variable
 } SymbolValue;
 
-typedef enum {
-    SYMBOL_FLAG_NONE = 0,
-    SYMBOL_FLAG_CONST = 1 << 0,
-    SYMBOL_FLAG_USED = 1 << 2,
-    SYMBOL_FLAG_INITIALIZED = 1 << 3
-} SymbolFlags;
+
 
 typedef struct Type Type; // forward declaration
 
 
+typedef enum {
+    SYMBOL_FLAG_NONE = 0,
+    SYMBOL_FLAG_CONST = 1 << 0,          // Was 'int is_const'
+    SYMBOL_FLAG_COMPUTED_VALUE = 1 << 1, // Was 'int has_const_value'
+    SYMBOL_FLAG_USED = 1 << 2,
+    SYMBOL_FLAG_INITIALIZED = 1 << 3
+} SymbolFlags;
+
 typedef struct Symbol {
-    InternResult *name_rec;      // points to interned record (pointer, dense idx)
+    InternResult *name_rec; 
     Type *type;
-    SymbolValue kind;
-    SymbolFlags flags;
     Span span;
 
-    // Optional constant value (for compile-time constants)
+    SymbolValue kind;   // 4 bytes
+    SymbolFlags flags;  // 4 bytes (Merged booleans here!)
+
+    // Raw 64-bit storage (8 bytes).
+    // We implicitly know the type from 'this->type'.
     union {
-        int int_val;
-        float float_val;
+        int64_t int_val;
+        double float_val;
         bool bool_val;
-    } value;
-    
+        // void *ptr_val; // For strings if you implement them
+    } value; 
+
 } Symbol;
 
 typedef struct Scope {

@@ -1,186 +1,151 @@
-# Simple Compiler (Work in progress)
+# Compiler V3
 
-A small, fast compiler front‑end written in C. Current pipeline:
-File → Lexing → Parsing → Semantic analysis (type resolution) → Report
+A custom compiler implemented in C for a strongly-typed, procedural language with syntax inspired by Rust and C. This project features a hand-written recursive descent parser, a robust semantic analysis phase, and a custom build system.
 
-This README gives a practical overview: how to build and run, what’s implemented, where things live, and where to read more.
+## 🚀 Features
+
+### Language Features
+* **Primitive Types**: `i32`, `i64`, `f32`, `f64`, `bool`, `char`, `string`.
+* **Type Inference**: Automatic type inference for array sizes and implicit numeric promotions (e.g., `i32` to `f64`).
+* **Complex Arrays**: 
+    * Multi-dimensional arrays (e.g., `f64[3][3]`).
+    * Inferred array sizes (e.g., `i32[] = {1, 2, 3}`).
+    * Strict dimension and size validation during compilation.
+* **Pointers & Memory**: Full pointer support (`*`, `&`, `**`), including arrays of pointers.
+* **Functions**: 
+    * Function declarations with return types.
+    * Function pointers and higher-order functions (passing functions as arguments).
+* **Control Flow**: `if`, `else`, `while`, `return`, `break`, `continue`.
+* **Scope & Shadowing**: Block-scoped variables with support for variable shadowing.
+* **Constants**: Compile-time constant evaluation and folding (`const x: i32 = 10 + 5;`).
+
+### Compiler Architecture
+* **Lexer**: Efficient tokenization handling identifiers, keywords, literals, and operators.
+* **Parser**: Recursive descent parser generating a detailed Abstract Syntax Tree (AST).
+* **Semantic Analyzer (Sema)**: 
+    * Symbol table management with scope hierarchy.
+    * Type checking with implicit casting logic.
+    * Structural validation for initializer lists (e.g., matching nesting levels).
+    * Constant expression evaluation.
+* **Error Reporting**: Rich error messages with source highlighting, line/column numbers, and specific error codes (e.g., dimension mismatches).
 
 ---
 
-## Quick start
+## 🛠️ Building and Running
 
-Build:
-```sh
+### Prerequisites
+* GCC or Clang
+* Make
+
+### Compilation
+To build the compiler:
+```bash
 make
 ```
 
-Run on the sample input with a useful set of flags:
-```sh
-./out/compiler ./input/test.txt --ast --types --time
+To build and immediately run the compiler on the default input file (input/test.rs):
+```bash
+make run
 ```
 
-Clean:
-```sh
-make clean
+### Usage
+Run the compiled executable with a source file argument:
+```bash
+./out/compiler input/test.rs
 ```
 
-Requirements: POSIX environment (tested on macOS) and a C11 (or newer) compiler.
+### 📄 Language Syntax Examples
+Variables and Constants
+```rust
+// Compile-time constants
+const MAX_SIZE: i64 = 100;
+const PI: f64 = 3.14159;
 
----
-
-## CLI options
-```
-Usage: ./out/compiler <file> [options]
-Options:
-  -t, --tokens    Print all tokens
-  -a, --ast       Print the parsed AST (after parsing)
-  -y, --types     Print type store dump (interned types)
-  -T, --time      Print lex/parse timing and throughput
-  -h, --help      Show this help
-  -v, --version   Print version and exit
+// Variable declarations
+val: i32 = 10;
+val_float: f32 = 10; // Implicit promotion: 10 (int) -> 10.0 (float)
 ```
 
----
+Arrays and Matrices
+```rust
+// 1D Fixed Size
+arr: i32[3] = {1, 2, 3};
 
-## What’s implemented
-- Hand‑written lexer (single pass over a character buffer)
-- Token stream stored in a DynArray
-- Dense arena‑backed interner for identifiers/keywords/strings
-- Recursive‑descent parser that builds an arena‑allocated AST
-- Semantic analysis: type resolution + interning, scope setup
-- Pretty benchmarking report (timings, memory, throughput)
+// 1D Inferred Size
+list: i32[] = {10, 20, 30, 40}; // Type becomes i32[4]
 
----
+// Multi-dimensional Arrays (Matrix)
+matrix: f64[2][2] = {
+    {1.0, 0.0},
+    {0.0, 1.0}
+};
 
-## Why it’s fast (highlights)
-- Pointer‑based scanning in the lexer; minimal branching.
-- No per‑token heap allocations: tokens hold Slice views into the source.
-- Pre‑interned keywords, and O(1) identifier canonicalization.
-- Arena allocation everywhere for cheap creation and O(1) teardown.
-- Reserved token capacity to avoid frequent resizes.
-
----
-
-## Project layout
-```
-.
-├── include/           # Public headers
-├── src/               # Sources (lexer, parser, driver, helpers)
-├── docs/              # Documentation (start at docs/README.md)
-├── input/             # Sample inputs (test.txt)
-├── obj/               # Object files (generated)
-└── out/               # Compiled binary (generated)
+// Mixed types in initializers are auto-promoted based on the array base type
+mixed_arr: f64[] = {1, 2.5, 3}; // Becomes {1.0, 2.5, 3.0}
 ```
 
-Key modules:
-- Lexer: `lexer.*`
-- Parser: `parser.*`, `parse_statements.*`, `ast.*`
-- Interner: `dense_arena_interner.*`
-- Containers: `dynamic_array.*`, `hash_map.*`
-- Memory: `arena.*`
-- CLI/metrics: `cli.*`, `metrics.*`
-- Types (preview): `type.*`, `scope.*`, `type_print.*`, `type_report.*`
+Functions and Function Pointers
+```rust
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
 
----
+fn apply_op(a: i32, b: i32, op: fn(i32, i32) -> i32) -> i32 {
+    return op(a, b);
+}
 
-## Compilation pipeline (at a glance)
-1) Read file into memory.
-2) Lex: produce tokens with Slice+Span and an InternResult* for identifiers.
-3) Parse: build an AST (arena‑allocated, spans preserved, canonical identifiers).
-4) Semantic analysis: resolve types, build scopes, and intern type signatures.
-5) Report: optional timing and memory summary.
+fn main() {
+    // Passing function as argument
+    res: i32 = apply_op(10, 20, add);
 
-Notes:
-- `--types` prints the type store dump.
-- `--ast` prints the parsed AST before semantics.
-
----
-
-## Pipeline example
-Input (`input/test.txt`):
-```plaintext
-fn mul(a: i64, b: i64) -> i64 {
-    return a * b;
+    // Array of functions
+    ops: (fn(i32, i32) -> i32)[] = { add, add };
 }
 ```
 
-Tokens:
-```plaintext
-│   1:1   │ FN            │ 'fn'
-│   1:4   │ IDENTIFIER    │ 'mul'
-│   1:7   │ LPAREN        │ '('
-│   1:8   │ IDENTIFIER    │ 'a'
-│   1:9   │ COLON         │ ':'
-│   1:11  │ I64           │ 'i64'
-│   1:14  │ COMMA         │ ','
-│   1:16  │ IDENTIFIER    │ 'b'
-│   1:17  │ COLON         │ ':'
-│   1:19  │ I64           │ 'i64'
-│   1:22  │ RPAREN        │ ')'
-│   1:24  │ ARROW         │ '->'
-│   1:27  │ I64           │ 'i64'
-│   1:31  │ LBRACE        │ '{'
-│   2:5   │ RETURN        │ 'return'
-│   2:12  │ IDENTIFIER    │ 'a'
-│   2:14  │ STAR          │ '*'
-│   2:16  │ IDENTIFIER    │ 'b'
-│   2:17  │ SEMICOLON     │ ';'
-│   3:1   │ RBRACE        │ '}'
-│   3:2   │ EOF           │ (no-lexeme)
+Pointers
+```rust
+fn main() {
+    x: i32 = 50;
+    
+    // Address-of operator
+    ptr: i32* = &x;
+    
+    // Dereference operator
+    val: i32 = *ptr;
+    
+    // Pointer to pointer
+    ptr_ptr: i32** = &ptr;
+}
 ```
 
-AST:
-```plaintext
-Program [1:1-3:2]
-└── FunctionDeclaration [1:1-3:2]
-│   ├── name: 'mul' (I-index:0)
-│   ├── return_type:
-│   │   ├── Type
-│   │   │   ├── kind: NamedType [1:27-1:30]
-│   │   │   └── type_name: 'i64' (K-index:10)
-│   ├── parameters:
-│   │   ├── Parameter [1:8-1:14]
-│   │   │   ├── name: 'a' (index:1)
-│   │   │   └── type:
-│   │   │   │   └── Type
-│   │   │   │   │   ├── kind: NamedType [1:11-1:14]
-│   │   │   │   │   └── type_name: 'i64' (K-index:10)
-│   │   └── Parameter [1:16-1:22]
-│   │   │   ├── name: 'b' (index:2)
-│   │   │   └── type:
-│   │   │   │   └── Type
-│   │   │   │   │   ├── kind: NamedType [1:19-1:22]
-│   │   │   │   │   └── type_name: 'i64' (K-index:10)
-│   └── body:
-│   │   └── Block [1:31-3:2]
-│   │   │   └── ReturnStatement [2:5-2:18]
-│   │   │   │   └── expression:
-│   │   │   │   │   └── BinaryExpression [2:12-2:17]
-│   │   │   │   │   │   ├── operator: '*'
-│   │   │   │   │   │   ├── left:
-│   │   │   │   │   │   │   ├── Identifier [2:12-2:13]
-│   │   │   │   │   │   │   │   └── name: 'a' (I-index:1)
-│   │   │   │   │   │   └── right:
-│   │   │   │   │   │   │   └── Identifier [2:16-2:17]
-│   │   │   │   │   │   │   │   └── name: 'b' (I-index:2)
+📂 Project Structure
+```txt
+├── include/
+│   ├── cli/            # Command line interface & metrics headers
+│   ├── core/           # File I/O, Utilities, Source handling
+│   ├── datastructures/ # Dynamic Arrays, Hash Maps, Arenas, Interners
+│   ├── lexing/         # Lexer headers
+│   ├── parsing/        # AST definitions & Parser headers
+│   └── sema/           # Semantic Analysis, Type definitions & Reporting
+├── src/
+│   ├── cli/            # CLI implementation
+│   ├── core/           # Core utilities implementation
+│   ├── datastructures/ # Data structure implementations
+│   ├── lexing/         # Lexer logic
+│   ├── parsing/        # Recursive descent parser logic
+│   ├── sema/           # Type checking, Symbol resolution, Expr validation
+│   └── main.c          # Entry point
+├── input/              # Test source files (.rs)
+├── test/               # C-based Unit testing suite
+├── makefile            # Build configuration
+└── lang.bnf            # Formal grammar definition
 ```
 
-Type store dump (interned types):
-- `--types` prints the interned type table and any resolved function signatures.
+### 🧪 Testing
+The project includes a regression test harness located in the test/ directory. It validates the parser and semantic analyzer against various edge cases, including argument mismatches, complex type resolutions, and scope rules.
 
----
-
-## Documentation
-Start at the docs index: `docs/README.md`
-- `docs/lexing.md` — tokens, slices, spans, interner integration
-- `docs/parsing.md` — recursive‑descent parser and AST shapes
-- Infra references: `docs/interner.md`, `docs/dynarray.md`, `docs/hashmap.md`, `docs/arena.md`
-- `docs/semantics.md` — planned
-
----
-
-## Notes & trade‑offs
-- Slices reference the original buffer; keep it alive while tokens/AST live.
-- Grammar uses precedence functions for expressions (no left recursion).
-- Error messages are improving; spans are preserved for good diagnostics.
-
+To run the tests
+```bash
+make test
+```

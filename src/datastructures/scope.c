@@ -100,13 +100,13 @@ Symbol *scope_lookup_symbol(Scope *scope, InternResult *rec) {
 Symbol *symbol_set_value_int(Symbol *symbol, int value){
     if (!symbol) return NULL;
     symbol->kind = SYMBOL_VALUE_INT;
-    symbol->value.int_val = value;
+    symbol->value.int_val = (int64_t)value;
     return symbol;
 }
 Symbol *symbol_set_value_float(Symbol *symbol, float value){
     if (!symbol) return NULL;
     symbol->kind = SYMBOL_VALUE_FLOAT;
-    symbol->value.float_val = value;
+    symbol->value.float_val = (double)value;
     return symbol;
 }
 Symbol *symbol_set_value_bool(Symbol *symbol, bool value){

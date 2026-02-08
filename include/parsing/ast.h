@@ -7,6 +7,9 @@
 #include "dense_arena_interner.h"
 #include "arena.h"
 
+/* ----------------------- Forward Declarations ----------------------- */
+typedef struct AstNode AstNode;
+typedef struct Type Type; /* Moved up to fix "unknown type name" error */
 
 /* ----------------------- AST node kinds ----------------------- */
 
@@ -37,6 +40,8 @@ typedef enum {
     AST_ASSIGNMENT_EXPR,
     AST_CALL_EXPR,
     AST_SUBSCRIPT_EXPR,
+    
+    AST_CAST, /* Explicit cast node (inserted by semantic analysis) */
 
     /* types */
     AST_TYPE,
@@ -75,9 +80,6 @@ typedef struct {
     } value;
 } ConstValue;
 
-
-/* forward */
-typedef struct AstNode AstNode;
 
 /* ----------------------- AST payload structs ----------------------- */
 
@@ -147,6 +149,12 @@ typedef struct { AstNode *lvalue; AstNode *rvalue; OpKind op; } AstAssignmentExp
 typedef struct { AstNode *callee; DynArray *args; } AstCallExpr;
 typedef struct { AstNode *target; AstNode *index; } AstSubscriptExpr;
 
+/* New Cast Struct */
+typedef struct {
+    AstNode *expr;
+    Type *target_type;
+} AstCastExpr;
+
 
 typedef enum {
     AST_TYPE_PRIMITIVE,   // primitive type: i32, foo, etc. (holds interned id)
@@ -179,7 +187,6 @@ typedef struct {
     DynArray *elements; /* contains AstNode* */
 } AstInitializeList;
 
-typedef struct Type Type;
 
 /* ----------------------- AstNode ----------------------- */
 struct AstNode {
@@ -213,6 +220,7 @@ struct AstNode {
         AstAssignmentExpr assignment_expr;
         AstCallExpr call_expr;
         AstSubscriptExpr subscript_expr;
+        AstCastExpr cast_expr;
 
         AstType ast_type;
         AstInitializeList initializer_list;
@@ -228,7 +236,3 @@ void print_ast(AstNode *node, int depth, DenseArenaInterner *keywords, DenseAren
 void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInterner *keywords, DenseArenaInterner *identifiers, DenseArenaInterner *strings);
 int is_lvalue_node(AstNode *node);
 int is_assignment_op(TokenType type);
-
-
-//void ast_program_push(AstProgram *program, AstNode *declaration);
-//void ast_argument_push(AstCallExpr *list, AstNode *argument);

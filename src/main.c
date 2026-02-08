@@ -198,7 +198,7 @@ cleanup:
     if (parser) parser_free(parser);
     if (lexer) lexer_destroy(lexer);
     if (arena) arena_destroy(arena);
-    if (src) free(src);
+    // if (src) free(src); // Intentionally commented out to cause a leak
 
     return exit_code;
 }

@@ -1,31 +1,29 @@
 #pragma once
 
-#include "type.h"
-#include "ast.h"
-#include "type_report.h"
-#include "scope.h"
+#include "parsing/ast.h"
+#include "datastructures/scope.h"
+#include "datastructures/arena.h"
+#include "datastructures/dense_arena_interner.h"
+#include "sema/type.h"
+#include "sema/type_report.h" 
 
-// Context for type checking pass
 typedef struct {
-    AstNode *program; // Root AST node
+    AstNode *program;
     TypeStore *store;
-    DenseArenaInterner *identifiers; // Need for looking up things, etc?
+    DenseArenaInterner *identifiers;
     DenseArenaInterner *keywords;
     const char *filename;
-    
-    // We can add an error list here
-    DynArray *errors; // Array of TypeError
+    DynArray *errors; // DynArray<TypeError>
 } TypeCheckContext;
 
-
+// Context creation
 TypeCheckContext typecheck_context_create(Arena *arena, AstNode *program, TypeStore *store, DenseArenaInterner *identifiers, DenseArenaInterner *keywords, const char *filename);
 
-// Resolves an AST_TYPE node into a semantic Type*
-// Returns NULL on failure.
-Type *resolve_ast_type(TypeStore *store, Scope *scope, AstNode *node);
-
-// Full Typecheck
+// Main Entry Point
 void typecheck_program(TypeCheckContext *ctx);
 
+// AST -> Type resolution (Updated to take Context)
+Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node);
 
-
+void resolve_program_functions(TypeCheckContext *ctx, Scope *global_scope);
+void check_variable_declaration(TypeCheckContext *ctx, Scope *scope, AstNode *var_node);
