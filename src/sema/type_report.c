@@ -44,6 +44,9 @@ void print_type_error(TypeError *err) {
         case TE_UNKNOWN_TYPE:
             fprintf(stderr, "Unknown type '%s%s%s'.\n", COL_YELLOW, err->as.name.name, COL_RESET);
             break;
+        case TE_INCOMPLETE_TYPE:
+             fprintf(stderr, "Incomplete type: %s%s%s.\n", COL_YELLOW, err->as.name.name, COL_RESET);
+             break;
         case TE_REDECLARATION:
             fprintf(stderr, "Redefinition of symbol '%s%s%s'.\n", COL_YELLOW, err->as.name.name, COL_RESET);
             break;
@@ -67,6 +70,10 @@ void print_type_error(TypeError *err) {
         case TE_ARRAY_SIZE_MISMATCH:
             fprintf(stderr, "Array size mismatch: Dimension has size %zu, but initializer has size %zu.\n", 
                 err->as.size.expected_size, err->as.size.actual_size);
+            break;
+        case TE_INDEX_OUT_OF_BOUNDS:
+            fprintf(stderr, "Array index out of bounds: Index %zu is >= Array Size %zu.\n", 
+                 err->as.size.actual_size, err->as.size.expected_size);
             break;
         case TE_EXPECTED_ARRAY:
             fprintf(stderr, "Type mismatch: Expected array type '");
@@ -124,7 +131,7 @@ void print_type_error(TypeError *err) {
              fprintf(stderr, "Argument count mismatch. Expected %zu, found %zu.\n", err->as.arg_count.expected, err->as.arg_count.actual);
              break;
         case TE_NOT_CONST:
-            fprintf(stderr, "Array index must be a constant expression.\n");
+            fprintf(stderr, "Expression must be a constant expression.\n");
             break;
         case TE_NOT_LVALUE:
             fprintf(stderr, "Expression is not an lvalue.\n");

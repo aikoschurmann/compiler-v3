@@ -11,6 +11,7 @@ typedef enum {
     TE_UNKNOWN_TYPE,       
     TE_REDECLARATION,      
     TE_UNDECLARED,         
+    TE_INCOMPLETE_TYPE,    // New: Variable declared with incomplete type (e.g. missing array size)
     
     // Type mismatch errors
     TE_TYPE_MISMATCH,      
@@ -31,6 +32,7 @@ typedef enum {
     TE_NOT_CALLABLE,       
     TE_NOT_INDEXABLE,      
     TE_FIELD_ACCESS,       
+    TE_INDEX_OUT_OF_BOUNDS, // New: Array index out of bounds
     
     TE_CONST_ASSIGN,       
     TE_ARG_COUNT_MISMATCH,  
@@ -58,7 +60,8 @@ typedef struct {
             int actual_ndim;
         } dims;
 
-        // TE_ARRAY_SIZE_MISMATCH
+        // TE_ARRAY_SIZE_MISMATCH & TE_INDEX_OUT_OF_BOUNDS
+        // For Bounds: expected_size = Limit, actual_size = Index
         struct {
             size_t expected_size;
             size_t actual_size;

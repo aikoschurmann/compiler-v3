@@ -53,7 +53,7 @@ asan:
 	@$(MAKE) clean
 	@$(MAKE) SANITIZE=asan all
 	@echo "Running with ASAN (abort-on-error)"
-	@ASAN_OPTIONS=abort_on_error=1 ./$(OUT_DIR)/$(NAME) ./input/test.rs --time 
+	@ASAN_OPTIONS=abort_on_error=1 ./$(OUT_DIR)/$(NAME) ./input/test.rs 
 
 # Debug build (no optimization)
 debug:
@@ -98,7 +98,7 @@ clean:
 
 # Run the compiled program (default run)
 run: all
-	./$(OUT_DIR)/$(NAME) ./input/test.rs --ast
+	./$(OUT_DIR)/$(NAME) ./input/test.rs 
 
 test: $(OUT_DIR)/test_runner
 	./$(OUT_DIR)/test_runner

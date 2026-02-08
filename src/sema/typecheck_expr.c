@@ -277,19 +277,46 @@ Type* check_subscript(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
         return NULL;
     }
 
+    if (base_type->kind == TYPE_ARRAY && base_type->as.array.size_known) {
+        // Even if is_const_expr flag is missing (paranoia), check if it's a literal node
+        bool is_const = subscript->index->is_const_expr;
+        if (!is_const && subscript->index->node_type == AST_LITERAL && subscript->index->data.literal.type == INT_LITERAL) {
+             is_const = true; // Force it for raw literals
+        }
+        
+        if (is_const) {
+            int64_t idx = subscript->index->const_value.value.int_val;
+            int64_t limit = base_type->as.array.size;
+
+            if (idx < 0 || idx >= limit) {
+                TypeError err = { 
+                    .kind = TE_INDEX_OUT_OF_BOUNDS, 
+                    .span = subscript->index->span, 
+                    .filename = ctx->filename, 
+                    .as.size = { .expected_size = (size_t)limit, .actual_size = (size_t)idx } 
+                };
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+        }
+    }
+
     return (base_type->kind == TYPE_ARRAY) ? base_type->as.array.base : base_type->as.ptr.base;
 }
 
 Type* check_assignment(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
     AstAssignmentExpr *assign = &expr->data.assignment_expr;
+
+    Type *lhs = check_expression(ctx, scope, assign->lvalue, NULL);
+    Type *rhs = check_expression(ctx, scope, assign->rvalue, lhs); 
+
     if (!is_lvalue_node(assign->lvalue)) {
         TypeError err = { .kind = TE_NOT_LVALUE, .span = assign->lvalue->span, .filename = ctx->filename };
         dynarray_push_value(ctx->errors, &err);
         return NULL;
     }
 
-    Type *lhs = check_expression(ctx, scope, assign->lvalue, NULL);
-    Type *rhs = check_expression(ctx, scope, assign->rvalue, lhs); 
+   
 
     if (!lhs || !rhs) return NULL;
 
@@ -393,6 +420,7 @@ Type* check_initializer_list(TypeCheckContext *ctx, Scope *scope, AstNode *expr,
         
         if (!actual_elem_type) {
             any_error = true;
+            // Prevent error cascades: if one element fails, abort checking this list
             break; 
         }
 
@@ -421,7 +449,16 @@ Type* check_initializer_list(TypeCheckContext *ctx, Scope *scope, AstNode *expr,
 
         // Explicit Type Check & Cast
         if (actual_elem_type != base_expected) {
-            if (type_can_implicit_cast(base_expected, actual_elem_type)) {
+            // FIX: Array Size Inference Logic
+            // If the expected type is an array of UNKNOWN size, and we inferred a concrete array of KNOWN size,
+            // we should PRESERVE the specific concrete type (to propagate size up), rather than casting down.
+            bool is_array_refinement = (base_expected->kind == TYPE_ARRAY && !base_expected->as.array.size_known &&
+                                        actual_elem_type->kind == TYPE_ARRAY && actual_elem_type->as.array.size_known);
+
+            if (is_array_refinement && type_can_implicit_cast(base_expected, actual_elem_type)) {
+                // Compatible, so we keep actual_elem_type (the one with the size)
+            } 
+            else if (type_can_implicit_cast(base_expected, actual_elem_type)) {
                 insert_cast(ctx, node, base_expected);
                 actual_elem_type = base_expected; 
             } else {
@@ -444,7 +481,18 @@ Type* check_initializer_list(TypeCheckContext *ctx, Scope *scope, AstNode *expr,
     if (any_error) return NULL;
 
     Type *final_base = common_base ? common_base : base_expected;
-    if (base_expected) final_base = base_expected; 
+    
+    // FIX: Prefer the inferred base if it provides more information (e.g. array size) than the expected base
+    if (base_expected && common_base) {
+        if (base_expected->kind == TYPE_ARRAY && !base_expected->as.array.size_known &&
+            common_base->kind == TYPE_ARRAY && common_base->as.array.size_known) {
+            final_base = common_base;
+        } else {
+            final_base = base_expected;
+        }
+    } else if (base_expected) {
+        final_base = base_expected;
+    }
 
     Type new_type = {0};
     new_type.kind = TYPE_ARRAY;
@@ -466,7 +514,6 @@ Type* check_initializer_list(TypeCheckContext *ctx, Scope *scope, AstNode *expr,
 Type* check_unary(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *expected_type) {
     AstUnaryExpr *unary = &expr->data.unary_expr;
     
-    // Propagate hint for numeric operators (e.g. -1 with expected i32 -> Hint i32)
     Type *hint = NULL;
     if (expected_type && type_is_numeric(expected_type)) {
         if (unary->op == OP_SUB || unary->op == OP_ADD) {
@@ -593,7 +640,7 @@ Type* check_expression(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type 
             result_type = check_binary(ctx, scope, expr, expected_type);
             break;
         case AST_UNARY_EXPR:
-            result_type = check_unary(ctx, scope, expr, expected_type); // <--- Added expected_type
+            result_type = check_unary(ctx, scope, expr, expected_type); 
             break;
         case AST_ASSIGNMENT_EXPR:
             result_type = check_assignment(ctx, scope, expr);

@@ -293,8 +293,7 @@ int test_sema_multidimensional_arrays() {
     CompileResult res4 = compile_source((char*)src_fail);
     ASSERT(!res4.parse_failed);
     ASSERT(res4.ctx.errors->count > 0); // Must have errors
-    // Optional: Assert count is exactly 1 if you implemented the 'break' fix
-    // ASSERT_EQ_INT(res4.ctx.errors->count, 1); 
+
     cleanup_compilation(&res4);
 
     return 1;
@@ -328,6 +327,47 @@ int test_sema_const_folding() {
     ASSERT_EQ_INT(init->const_value.value.int_val, 11);
     
     cleanup_compilation(&res);
+    return 1;
+}
+
+int test_sema_bounds_checks() {
+    // 1. Bounds check in statement path
+    const char *src1 = "v: i32[2]; fn main() { v[2] = 1; }";
+    CompileResult res1 = compile_source(src1);
+    ASSERT(!res1.parse_failed && res1.ctx.errors->count > 0);
+    ASSERT_EQ_INT(((TypeError*)dynarray_get(res1.ctx.errors, 0))->kind, TE_INDEX_OUT_OF_BOUNDS);
+    cleanup_compilation(&res1);
+
+    // 2. Incomplete types (no size, no init)
+    const char *src2 = "v: i32[][3];";
+    CompileResult res2 = compile_source(src2);
+    ASSERT(res2.ctx.errors->count > 0);
+    ASSERT_EQ_INT(((TypeError*)dynarray_get(res2.ctx.errors, 0))->kind, TE_INCOMPLETE_TYPE);
+    cleanup_compilation(&res2);
+
+    // 3. Deep AST Patching Verification
+    const char *src3 = "mat: i32[][2] = {{1, 2}, {3, 4}, {5, 6}};";
+    CompileResult res3 = compile_source(src3);
+    ASSERT(res3.ctx.errors->count == 0);
+
+    AstNode *decl = *(AstNode**)dynarray_get(res3.program->data.program.decls, 0);
+    AstType *ast_t = &decl->data.variable_declaration.type->data.ast_type;
+    
+    // Check semantic type
+    ASSERT_EQ_INT(decl->type->as.array.size, 3);
+    // Check syntactic AST patching
+    ASSERT_NOT_NULL(ast_t->u.array.size_expr);
+    ASSERT_EQ_INT(ast_t->u.array.size_expr->const_value.value.int_val, 3);
+    
+    cleanup_compilation(&res3);
+
+    // 4. Multi-dimensional OOB check
+    const char *src4 = "m: i32[2][2]; fn main() { m[0][5] = 1; }";
+    CompileResult res4 = compile_source(src4);
+    ASSERT(res4.ctx.errors->count > 0);
+    ASSERT_EQ_INT(((TypeError*)dynarray_get(res4.ctx.errors, 0))->kind, TE_INDEX_OUT_OF_BOUNDS);
+    cleanup_compilation(&res4);
+
     return 1;
 }
 

@@ -38,40 +38,30 @@ TypeCheckContext typecheck_context_create(Arena *arena, AstNode *program, TypeSt
 #define FAST_GET(arr, i) (((AstNode**)(arr)->data)[i])
 
 // -----------------------------------------------------------------------------
-// AST Patching Helper
+// AST Patching & Resolution Helpers
 // -----------------------------------------------------------------------------
-// Updates the Syntactic AST to match the Inferred Semantic Type.
-// e.g. Changes 'i32[]' (unspecified) to 'i32[4]' (literal 4) in the AST structure.
+
 static void patch_inferred_array_sizes(TypeCheckContext *ctx, AstNode *type_ast, Type *concrete_type) {
     if (!type_ast || !concrete_type) return;
     if (type_ast->node_type != AST_TYPE) return;
 
-    // Only proceed if both are array types
     if (type_ast->data.ast_type.kind == AST_TYPE_ARRAY && concrete_type->kind == TYPE_ARRAY) {
-        
-        // 1. Recurse first (to handle multidimensional arrays bottom-up)
         patch_inferred_array_sizes(ctx, 
             type_ast->data.ast_type.u.array.elem, 
             concrete_type->as.array.base
         );
 
-        // 2. If AST size is missing but Concrete size is known, create a synthetic Literal node
         if (!type_ast->data.ast_type.u.array.size_expr && concrete_type->as.array.size_known) {
             AstNode *size_lit = ast_create_node(AST_LITERAL, ctx->store->arena);
             if (size_lit) {
-                // Synthesize the literal 'N'
                 size_lit->node_type = AST_LITERAL;
-                size_lit->span = type_ast->span; // Inherit span from the type definition
+                size_lit->span = type_ast->span;
                 size_lit->type = ctx->store->t_i64;
                 size_lit->is_const_expr = 1;
-                
                 size_lit->data.literal.type = INT_LITERAL;
                 size_lit->data.literal.value.int_val = (int64_t)concrete_type->as.array.size;
-                
                 size_lit->const_value.type = INT_LITERAL;
                 size_lit->const_value.value.int_val = (int64_t)concrete_type->as.array.size;
-
-                // Attach to AST
                 type_ast->data.ast_type.u.array.size_expr = size_lit;
             }
         }
@@ -81,7 +71,6 @@ static void patch_inferred_array_sizes(TypeCheckContext *ctx, AstNode *type_ast,
 Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
     if (!ctx || !node) return NULL;
     TypeStore *store = ctx->store;
-    
     if (node->node_type != AST_TYPE) return NULL;
 
     AstType *ast_ty = &node->data.ast_type;
@@ -97,12 +86,7 @@ Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
                     if (sym && sym->kind == SYMBOL_VALUE_TYPE) return sym->type;
                 }
                 const char *name_str = ((Slice*)name_res->key)->ptr;
-                TypeError err = {
-                    .kind = TE_UNKNOWN_TYPE, 
-                    .span = node->span,
-                    .filename = ctx->filename,
-                    .as.name.name = name_str
-                };
+                TypeError err = { .kind = TE_UNKNOWN_TYPE, .span = node->span, .filename = ctx->filename, .as.name.name = name_str };
                 dynarray_push_value(ctx->errors, &err);
             }
             return NULL; 
@@ -122,8 +106,8 @@ Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
 
             int64_t size = 0;
             bool size_known = false;
-            
             AstNode *sz = ast_ty->u.array.size_expr;
+            
             if (sz) {
                 Type *sz_type = check_expression(ctx, scope, sz, store->t_i64);
                 if (sz_type) {
@@ -144,13 +128,7 @@ Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
                 }
             }
 
-            Type proto = { 
-                .kind = TYPE_ARRAY, 
-                .as.array.base = elem, 
-                .as.array.size = size, 
-                .as.array.size_known = size_known 
-            };
-
+            Type proto = { .kind = TYPE_ARRAY, .as.array.base = elem, .as.array.size = size, .as.array.size_known = size_known };
             InternResult *res = intern_type(store, &proto);
             return res ? (Type*)((Slice*)res->key)->ptr : NULL;
         }
@@ -158,16 +136,13 @@ Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
         case AST_TYPE_FUNC: {
              Type *ret = resolve_ast_type(ctx, scope, ast_ty->u.func.return_type);
              if (!ret) ret = store->t_void; 
-             
              DynArray *params = ast_ty->u.func.param_types;
              size_t count = params ? params->count : 0;
              Type **param_types = NULL;
-             
              if (count > 0) {
                  if (count <= 64) param_types = ALLOCA(sizeof(Type*) * count);
                  else param_types = malloc(sizeof(Type*) * count);
              }
-             
              for (size_t i = 0; i < count; i++) {
                  AstNode *p_node = FAST_GET(params, i);
                  Type *pt = resolve_ast_type(ctx, scope, p_node);
@@ -177,7 +152,6 @@ Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
                  }
                  param_types[i] = pt;
              }
-             
              Type proto = { .kind = TYPE_FUNCTION, .as.func.return_type = ret, .as.func.param_count = count, .as.func.params = param_types };
              InternResult *res = intern_type(store, &proto);
              if (count > 64) free(param_types);
@@ -236,7 +210,7 @@ void resolve_program_functions(TypeCheckContext *ctx, Scope *global_scope) {
 }
 
 // -----------------------------------------------------------------------------
-// Declarations & Checkers
+// Type Checking Logic
 // -----------------------------------------------------------------------------
 
 static void check_initializer(TypeCheckContext *ctx, Scope *scope, AstNode *var_node, AstNode *initializer, Type *var_type, Symbol *sym) {
@@ -249,16 +223,16 @@ static void check_initializer(TypeCheckContext *ctx, Scope *scope, AstNode *var_
         
         bool can_cast = type_can_implicit_cast(var_type, actual_type);
 
-        if (can_cast && var_type->kind == TYPE_ARRAY && !var_type->as.array.size_known) {
-            // 1. Update semantic type
+        // INFERENCE LOGIC: If variable is T[] (unknown size) and initializer is T[N] (known), update it.
+        // We do this if 'can_cast' is true OR if it's purely an array size refinement.
+        bool is_inference = (var_type->kind == TYPE_ARRAY && !var_type->as.array.size_known && actual_type->kind == TYPE_ARRAY);
+
+        if (is_inference) {
             var_node->type = actual_type;
             if (sym) sym->type = actual_type;
-
-            // 2. Update AST (Syntactic) structure to reflect inferred size
             if (var_node->node_type == AST_VARIABLE_DECLARATION) {
                 patch_inferred_array_sizes(ctx, var_node->data.variable_declaration.type, actual_type);
             }
-            
             return;
         }
 
@@ -276,12 +250,34 @@ static void check_initializer(TypeCheckContext *ctx, Scope *scope, AstNode *var_
     }
 }
 
+static bool is_type_complete(Type *t) {
+    if (!t) return false;
+    if (t->kind == TYPE_ARRAY) {
+        if (!t->as.array.size_known) return false;
+        return is_type_complete(t->as.array.base);
+    }
+    return true; 
+}
+
 void check_variable_declaration(TypeCheckContext *ctx, Scope *scope, AstNode *var_node) {
     if (var_node->node_type != AST_VARIABLE_DECLARATION) return;
     AstVariableDeclaration *var_decl = &var_node->data.variable_declaration;
 
     Type *var_type = resolve_ast_type(ctx, scope, var_decl->type);
     if (!var_type) return; 
+
+    // FIX: Check for incomplete types (missing size without initializer)
+    if (!var_decl->initializer) {
+        if (!is_type_complete(var_type)) {
+            TypeError err = { 
+                .kind = TE_INCOMPLETE_TYPE, 
+                .span = var_node->span, 
+                .filename = ctx->filename,
+                .as.name.name = "Variable declared with incomplete type (missing array size)" 
+            };
+            dynarray_push_value(ctx->errors, &err);
+        }
+    }
 
     var_node->type = var_type;
     
@@ -322,6 +318,7 @@ static void check_block(TypeCheckContext *ctx, Scope *parent, AstNode *block_nod
 
 static void check_statement(TypeCheckContext *ctx, Scope *scope, AstNode *stmt, Type *return_type) {
     if (!stmt) return;
+    
     switch (stmt->node_type) {
         case AST_RETURN_STATEMENT: {
             AstReturnStatement *ret = &stmt->data.return_statement;
@@ -336,8 +333,12 @@ static void check_statement(TypeCheckContext *ctx, Scope *scope, AstNode *stmt, 
             }
             break;
         }
-        case AST_BLOCK: check_block(ctx, scope, stmt, return_type, true); break;
-        case AST_VARIABLE_DECLARATION: check_variable_declaration(ctx, scope, stmt); break;
+        case AST_BLOCK: 
+            check_block(ctx, scope, stmt, return_type, true); 
+            break;
+        case AST_VARIABLE_DECLARATION: 
+            check_variable_declaration(ctx, scope, stmt); 
+            break;
         case AST_IF_STATEMENT: {
             AstIfStatement *ifs = &stmt->data.if_statement;
             check_expression(ctx, scope, ifs->condition, ctx->store->t_bool);
@@ -351,17 +352,18 @@ static void check_statement(TypeCheckContext *ctx, Scope *scope, AstNode *stmt, 
             check_statement(ctx, scope, ws->body, return_type);
             break;
         }
-        case AST_FOR_STATEMENT: {
-            AstForStatement *fs = &stmt->data.for_statement;
-            Scope *for_scope = scope_create(ctx->store->arena, scope, 4, SCOPE_IDENTIFIERS);
-            if (fs->init) check_statement(ctx, for_scope, fs->init, return_type);
-            if (fs->condition) check_expression(ctx, for_scope, fs->condition, ctx->store->t_bool);
-            if (fs->post) check_expression(ctx, for_scope, fs->post, NULL);
-            check_statement(ctx, for_scope, fs->body, return_type);
+
+        case AST_EXPR_STATEMENT: 
+            check_expression(ctx, scope, stmt->data.expr_statement.expression, NULL); 
             break;
-        }
-        case AST_EXPR_STATEMENT: check_expression(ctx, scope, stmt->data.expr_statement.expression, NULL); break;
-        default: break;
+        case AST_ASSIGNMENT_EXPR:
+        case AST_CALL_EXPR:
+        case AST_UNARY_EXPR: // Handles things like x++;
+            check_expression(ctx, scope, stmt, NULL);
+            break;
+        // -----------------------
+        default: 
+            break; 
     }
 }
 

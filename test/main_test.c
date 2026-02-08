@@ -41,12 +41,14 @@ int test_sema_array_inference_mixed_types();
 int test_sema_multidimensional_arrays();
 int test_sema_initializer_errors();
 int test_sema_const_folding();
+int test_sema_bounds_checks();
 
 // Exceptions
 int test_exception_long_identifier();
 int test_exception_unclosed_comment();
 int test_exception_deep_blocks();
 int test_exception_weird_chars();
+
 
 int main() {
     fprintf(stderr, "=== Running Compiler Test Suite ===\n");
@@ -92,6 +94,7 @@ int main() {
     run_test("Sema: 2D Arrays", test_sema_multidimensional_arrays);
     run_test("Sema: Initializer Errors", test_sema_initializer_errors);
     run_test("Sema: Const Folding", test_sema_const_folding);
+    run_test("Sema: Bounds Checks", test_sema_bounds_checks);
 
     // Exceptions & Stress
     run_test("Exception: Long Identifier", test_exception_long_identifier);
