@@ -1,19 +1,26 @@
 #pragma once
+
+#include "parsing/ast.h"
+#include "arena.h"
 #include <stddef.h>
 
-void human_readable_bytes(size_t bytes, char *out, size_t out_len);
-void human_readable_time(double seconds, char *out, size_t out_len);
-void print_benchmark_stats(const char *filename,
-                           size_t file_size,
-                           size_t token_count,
-                           double tokenization_time,
-                           double parsing_time,
-                           double semantics_time,
-                           size_t arena_used_lex,
-                           size_t arena_used_parse,
-                           size_t arena_used_sema,
-                           long peak_rss_before_kb,
-                           long peak_rss_after_kb);
+typedef struct {
+    double time_tokenize_ms;
+    double time_parse_ms;
+    double time_sema_ms;
+    
+    size_t mem_lex_bytes;
+    size_t mem_parse_bytes;
+    size_t mem_sema_bytes;
+    size_t rss_delta_bytes;
+    
+    size_t token_count;
+    size_t file_size_bytes;
+    const char *filename;
+} CompilationStats;
 
-double now_seconds(void);
-long get_peak_rss_kb(void);
+// Traverses the AST to count total nodes
+size_t count_ast_nodes(AstNode *program);
+
+// Prints the formatted table report
+void print_compilation_report(CompilationStats *stats, AstNode *program);

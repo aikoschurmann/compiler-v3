@@ -49,3 +49,6 @@ static int ptr_identity_cmp(void *a, void *b) {
     // Compare pointer identity
     return (a > b) - (a < b);
 }
+
+double now_seconds(void);
+size_t get_peak_rss_kb(void);

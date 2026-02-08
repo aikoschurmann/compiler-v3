@@ -16,6 +16,8 @@
 #include "scope.h"
 #include "cli.h"
 #include "metrics.h"
+#include "utils.h"       // <--- Add this
+
 
 // Exit codes
 #define EXIT_OK    0
@@ -180,17 +182,19 @@ int main(int argc, char **argv) {
         long peak_rss_after_kb = get_peak_rss_kb();
         size_t token_count = lexer->tokens ? lexer->tokens->count : 0;
         
-        print_benchmark_stats(path,
-                              src_len,
-                              token_count,
-                              t_lex,
-                              t_parse,
-                              t_sema,
-                              mem_lex,
-                              mem_parse,
-                              mem_sema,
-                              peak_rss_before_kb,
-                              peak_rss_after_kb);
+        CompilationStats stats = {
+            .time_tokenize_ms = t_lex * 1000,
+            .time_parse_ms = t_parse * 1000,
+            .time_sema_ms = t_sema * 1000,
+            .mem_lex_bytes = mem_lex,
+            .mem_parse_bytes = mem_parse,
+            .mem_sema_bytes = mem_sema,
+            .rss_delta_bytes = (peak_rss_after_kb - peak_rss_before_kb) * 1024,
+            .token_count = token_count,
+            .file_size_bytes = src_len,
+            .filename = filename_interned
+        };
+        print_compilation_report(&stats, program);
     }
 
 cleanup:
