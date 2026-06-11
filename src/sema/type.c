@@ -1,5 +1,7 @@
 #include <string.h>
 #include "type.h"
+#include "sema/intrinsics.h"
+#include "datastructures/scope.h"
 
 // FNV-1a constants for 64-bit systems
 #define FNV_OFFSET 0xcbf29ce484222325ULL
@@ -260,5 +262,23 @@ TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, Dense
     register_prim(ts, keywords, "str", ts->t_str);
     
     return ts;
+}
+
+void register_intrinsics(TypeStore *ts, Scope *global_scope, DenseArenaInterner *ids) {
+    // 1. print(...)
+    {
+        Slice s = { .ptr = "print", .len = 5 };
+        InternResult *res = intern(ids, &s, NULL);
+        Symbol *sym = scope_define_symbol(global_scope, res, ts->t_void, SYMBOL_VALUE_INTRINSIC);
+        if (sym) sym->intrinsic_kind = INTRINSIC_PRINT;
+    }
+
+    // 2. println(...) - maybe later, or just print_newline
+    {
+        Slice s = { .ptr = "println", .len = 7 };
+        InternResult *res = intern(ids, &s, NULL);
+        Symbol *sym = scope_define_symbol(global_scope, res, ts->t_void, SYMBOL_VALUE_INTRINSIC);
+        if (sym) sym->intrinsic_kind = INTRINSIC_PRINT_NEWLINE; // Overloading println to print then newline
+    }
 }
 

@@ -395,7 +395,9 @@ static void check_function(TypeCheckContext *ctx, Scope *parent_scope, AstNode *
             }
         }
     }
-    check_block(ctx, fn_scope, decl->body, func_type->as.func.return_type, false);
+    if (decl->body) {
+        check_block(ctx, fn_scope, decl->body, func_type->as.func.return_type, false);
+    }
 }
 
 void typecheck_program(TypeCheckContext *ctx) {
@@ -404,6 +406,7 @@ void typecheck_program(TypeCheckContext *ctx) {
     int global_count = (ctx->identifiers ? ctx->identifiers->dense_index_count : 0) + 64;
     Scope *global_scope = scope_create(scope_arena, NULL, global_count, SCOPE_IDENTIFIERS);  
     
+    register_intrinsics(ctx->store, global_scope, ctx->identifiers);
     resolve_program_functions(ctx, global_scope);
 
     AstProgram *program = &ctx->program->data.program;

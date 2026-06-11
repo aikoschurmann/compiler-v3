@@ -156,7 +156,7 @@ static void print_mem_unit(size_t bytes) {
 }
 
 void print_compilation_report(CompilationStats *stats, AstNode *program) {
-    double total_time = stats->time_tokenize_ms + stats->time_parse_ms + stats->time_sema_ms;
+    double total_time = stats->time_tokenize_ms + stats->time_parse_ms + stats->time_sema_ms + stats->time_codegen_ms;
     if (total_time <= 0) total_time = 0.001;
 
     size_t ast_nodes = count_ast_nodes(program);
@@ -193,6 +193,13 @@ void print_compilation_report(CompilationStats *stats, AstNode *program) {
     printf("%s│%s Semantics       %s│%s %6.3f ms %s│%s", COL_GRAY, COL_RESET, COL_GRAY, COL_RESET, stats->time_sema_ms, COL_GRAY, COL_GREEN);
     print_bar(pct);
     printf("%s│%s     %5.1f%% %s│%s %9.1f  %s│%s\n", COL_GRAY, COL_RESET, pct * 100.0, COL_GRAY, COL_RESET, (stats->time_sema_ms * 1e6) / stats->token_count, COL_GRAY, COL_RESET);
+
+    // Codegen
+    pct = stats->time_codegen_ms / total_time;
+    printf("%s│%s Code Generation %s│%s %6.3f ms %s│%s", COL_GRAY, COL_RESET, COL_GRAY, COL_RESET, stats->time_codegen_ms, COL_GRAY, COL_GREEN);
+    print_bar(pct);
+    printf("%s│%s     %5.1f%% %s│%s %9.1f  %s│%s\n", COL_GRAY, COL_RESET, pct * 100.0, COL_GRAY, COL_RESET, (stats->time_codegen_ms * 1e6) / stats->token_count, COL_GRAY, COL_RESET);
+
     printf("%s└─────────────────┴───────────┴──────────────────┴────────────┴────────────┘%s\n", COL_GRAY, COL_RESET);
 
     // --- MEMORY ---

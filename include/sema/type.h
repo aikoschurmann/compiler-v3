@@ -6,6 +6,7 @@
 
 typedef struct Type Type;
 typedef struct Symbol Symbol; // Forward declaration for structs/typedefs
+typedef struct Scope Scope;   // Forward declaration for intrinsics
 
 typedef enum {
     TYPE_VOID,
@@ -84,6 +85,8 @@ typedef struct TypeStore {
 
 TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, DenseArenaInterner *keywords);
 InternResult *intern_type(TypeStore *ts, Type *prototype);
+
+void register_intrinsics(TypeStore *ts, Scope *global_scope, DenseArenaInterner *ids);
 
 // Returns true for i8, u8, i16, i32, i64, etc.
 bool type_is_integer(Type *t);

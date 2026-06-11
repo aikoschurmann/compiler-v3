@@ -1,13 +1,18 @@
 #pragma once
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef struct {
-    int print_tokens;
-    int print_ast;
-    int print_time;
-    int print_types;
+    bool print_tokens;
+    bool print_ast;
+    bool print_time;
+    bool print_types;
+    bool run_executable;
+    bool quiet;
+    const char *output_name;
 } Options;
 
-int parse_options(int argc, char **argv, Options *opts, const char **out_path);
+int parse_options(int argc, char **argv, Options *opts, const char **in_path);
 void print_usage(const char *prog);
 void print_version(void);
+

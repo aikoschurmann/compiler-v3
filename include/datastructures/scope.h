@@ -17,6 +17,7 @@ typedef enum {
     SYMBOL_VALUE_BOOL,
     SYMBOL_VALUE_FUNCTION,
     SYMBOL_VALUE_TYPE,   // Added for type names (i32, f64, structs)
+    SYMBOL_VALUE_INTRINSIC, // Added for compiler built-ins
     SYMBOL_VARIABLE      // General runtime variable
 } SymbolValue;
 
@@ -40,6 +41,7 @@ typedef struct Symbol {
 
     SymbolValue kind;   // 4 bytes
     SymbolFlags flags;  // 4 bytes (Merged booleans here!)
+    int intrinsic_kind; // Added for intrinsics
 
     // Raw 64-bit storage (8 bytes).
     // We implicitly know the type from 'this->type'.

@@ -111,7 +111,7 @@ bool hashmap_put(
     size_t (*hash)(void*),
     int (*cmp)(void*, void*)
 ) {
-    if (!map || !key || !hash || !cmp) return false;
+    if (!map || !hash || !cmp) return false;
 
     /* Resize when load factor > 0.75 */
     if (map->size >= (map->bucket_count * 3) / 4) {
@@ -150,7 +150,7 @@ void* hashmap_get(
     size_t (*hash)(void*),
     int (*cmp)(void*, void*)
 ) {
-    if (!map || !key || !hash || !cmp) return NULL;
+    if (!map || !hash || !cmp) return NULL;
 
     size_t bucket_index = hash(key) % map->bucket_count;
     DynArray *bucket = &map->buckets[bucket_index];
@@ -172,7 +172,7 @@ bool hashmap_remove(
     void (*free_key)(void*),
     void (*free_value)(void*)
 ) {
-    if (!map || !key || !hash || !cmp) return false;
+    if (!map || !hash || !cmp) return false;
 
     size_t bucket_index = hash(key) % map->bucket_count;
     DynArray *bucket = &map->buckets[bucket_index];

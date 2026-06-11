@@ -17,6 +17,8 @@
 #include "cli.h"
 #include "metrics.h"
 #include "utils.h"       // <--- Add this
+#include "codegen.h"
+
 
 
 // Exit codes
@@ -160,6 +162,55 @@ int main(int argc, char **argv) {
     }
 
     // ---------------------------------------------------------
+    // PHASE 4: Code Generation
+    // ---------------------------------------------------------
+    double t5 = now_seconds();
+    double t_run = 0;
+    int program_exit_code = 0;
+    CodegenContext *cg_ctx = codegen_context_create(program, "main_module");
+    if (codegen_program(cg_ctx) == 0) {
+        // Successfully generated IR
+        char obj_path[256];
+        snprintf(obj_path, sizeof(obj_path), "%s.o", opts.output_name);
+        codegen_emit_object(cg_ctx, obj_path);
+        
+        if (!opts.quiet) printf("Linking...\n");
+        char link_cmd[512];
+        snprintf(link_cmd, sizeof(link_cmd), "cc %s src/core/runtime.c -o %s 2>/dev/null || cc %s -o %s", 
+                 obj_path, opts.output_name, obj_path, opts.output_name);
+        
+        int ret = system(link_cmd);
+        if (ret == 0) {
+            if (!opts.quiet) printf("Successfully compiled to '%s' executable.\n", opts.output_name);
+            
+            if (opts.run_executable) {
+                if (!opts.quiet) printf("\n--- Running Output ---\n");
+                double t_run_start = now_seconds();
+                char run_cmd[258];
+                snprintf(run_cmd, sizeof(run_cmd), "./%s", opts.output_name);
+                program_exit_code = system(run_cmd);
+                t_run = now_seconds() - t_run_start;
+                
+                // system() returns termination status (exit code is high 8 bits)
+                if (WIFEXITED(program_exit_code)) {
+                    program_exit_code = WEXITSTATUS(program_exit_code);
+                    if (!opts.quiet) printf("--- Process Exited with Code: %d ---\n", program_exit_code);
+                } else if (WIFSIGNALED(program_exit_code)) {
+                    if (!opts.quiet) printf("--- Process Terminated by Signal: %d ---\n", WTERMSIG(program_exit_code));
+                }
+            }
+        } else {
+            fprintf(stderr, "Error: Linking failed\n");
+            exit_code = EXIT_IO;
+        }
+    } else {
+        fprintf(stderr, "Error: Code generation failed\n");
+        exit_code = EXIT_TYPE;
+    }
+    codegen_context_destroy(cg_ctx);
+    double t_codegen = now_seconds() - t5;
+
+    // ---------------------------------------------------------
     // Reporting & Output
     // ---------------------------------------------------------
     
@@ -195,6 +246,12 @@ int main(int argc, char **argv) {
             .filename = filename_interned
         };
         print_compilation_report(&stats, program);
+        
+        printf("\n--- Extended Metrics ---\n");
+        printf("Codegen Time:     %8.3f ms\n", t_codegen * 1000.0);
+        if (opts.run_executable) {
+            printf("Execution Time:   %8.3f ms\n", t_run * 1000.0);
+        }
     }
 
 cleanup:

@@ -8,6 +8,7 @@ typedef struct {
     double time_tokenize_ms;
     double time_parse_ms;
     double time_sema_ms;
+    double time_codegen_ms;
     
     size_t mem_lex_bytes;
     size_t mem_parse_bytes;

@@ -262,7 +262,6 @@ static Slice unescape_string_into_arena(const Slice raw, Arena *arena) {
                 case '"': *w++ = '"'; break;
                 case '\'': *w++ = '\''; break;
                 case '0': *w++ = '\0'; break;
-                /* TODO: handle \x, \u escapes if you want Unicode */
                 default: *w++ = *r; break;
             }
             r++;

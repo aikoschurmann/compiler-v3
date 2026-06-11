@@ -2,6 +2,7 @@
 #include "sema/type_utils.h"
 #include "sema/symbol_utils.h"
 #include "sema/typecheck.h"
+#include "sema/intrinsics.h"
 #include "parsing/ast.h" 
 #include "datastructures/scope.h"
 #include <math.h>
@@ -224,6 +225,25 @@ Type* check_identifier(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
 
 Type* check_call_expr(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
     AstCallExpr *call = &expr->data.call_expr;
+    
+    // Check if the callee is an intrinsic
+    if (call->callee->node_type == AST_IDENTIFIER) {
+        Symbol *sym = scope_lookup_symbol(scope, call->callee->data.identifier.intern_result);
+        if (sym && sym->kind == SYMBOL_VALUE_INTRINSIC) {
+            expr->type = ctx->store->t_void; // Intrinsics currently return void
+            
+            size_t arg_count = call->args ? call->args->count : 0;
+            for (size_t i = 0; i < arg_count; i++) {
+                AstNode *arg = *(AstNode**)dynarray_get(call->args, i);
+                check_expression(ctx, scope, arg, NULL);
+            }
+
+            // We'll store the intrinsic kind in the callee node's metadata
+            call->callee->type = sym->type; 
+            return expr->type;
+        }
+    }
+
     Type *callee_type = check_expression(ctx, scope, call->callee, NULL);
     if (!callee_type) return NULL;
 

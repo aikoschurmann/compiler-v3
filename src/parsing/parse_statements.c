@@ -315,12 +315,19 @@ AstNode *parse_function_declaration(Parser *p, ParseError *err) {
         func_decl->data.function_declaration.return_type = NULL; // no return type
     }
 
-    /* body */
-    func_decl->data.function_declaration.body = parse_block(p, err);
-    if (!func_decl->data.function_declaration.body) return NULL; /* parse_block produced an error */
-    
-    /* Update span to include the entire function from fn token to end of body */
-    func_decl->span = span_join(&func_decl->span, &func_decl->data.function_declaration.body->span);
+    /* body or semicolon */
+    Token *tok = current_token(p);
+    if (tok && tok->type == TOK_SEMICOLON) {
+        consume(p, TOK_SEMICOLON);
+        func_decl->data.function_declaration.body = NULL;
+        func_decl->span = span_join(&func_decl->span, &tok->span);
+    } else {
+        func_decl->data.function_declaration.body = parse_block(p, err);
+        if (!func_decl->data.function_declaration.body) return NULL; /* parse_block produced an error */
+        
+        /* Update span to include the entire function from fn token to end of body */
+        func_decl->span = span_join(&func_decl->span, &func_decl->data.function_declaration.body->span);
+    }
     
     return func_decl;
 }

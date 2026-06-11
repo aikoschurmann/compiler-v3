@@ -43,6 +43,21 @@ int test_sema_initializer_errors();
 int test_sema_const_folding();
 int test_sema_bounds_checks();
 
+// Codegen Tests
+int test_codegen_basic_arithmetic();
+int test_codegen_recursion();
+int test_codegen_array_sort();
+int test_codegen_logic();
+int test_codegen_complex_loop();
+int test_codegen_fib_recursive();
+int test_codegen_nested_loops();
+int test_codegen_matrix_multiplication();
+int test_codegen_break_continue();
+int test_codegen_shadowing();
+int test_codegen_type_promotion();
+int test_codegen_large_array();
+int test_codegen_strings();
+
 // Exceptions
 int test_exception_long_identifier();
 int test_exception_unclosed_comment();
@@ -95,6 +110,21 @@ int main() {
     run_test("Sema: Initializer Errors", test_sema_initializer_errors);
     run_test("Sema: Const Folding", test_sema_const_folding);
     run_test("Sema: Bounds Checks", test_sema_bounds_checks);
+
+    // Codegen Tests
+    run_test("Codegen: Basic Arithmetic", test_codegen_basic_arithmetic);
+    run_test("Codegen: Recursion", test_codegen_recursion);
+    run_test("Codegen: Array Sort", test_codegen_array_sort);
+    run_test("Codegen: Logic", test_codegen_logic);
+    run_test("Codegen: Complex Loop", test_codegen_complex_loop);
+    run_test("Codegen: Recursive Fib", test_codegen_fib_recursive);
+    run_test("Codegen: Nested Loops", test_codegen_nested_loops);
+    run_test("Codegen: Matrix Multiplication", test_codegen_matrix_multiplication);
+    run_test("Codegen: Break/Continue", test_codegen_break_continue);
+    run_test("Codegen: Shadowing", test_codegen_shadowing);
+    run_test("Codegen: Type Promotion", test_codegen_type_promotion);
+    run_test("Codegen: Large Arrays", test_codegen_large_array);
+    run_test("Codegen: Strings", test_codegen_strings);
 
     // Exceptions & Stress
     run_test("Exception: Long Identifier", test_exception_long_identifier);
