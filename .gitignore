@@ -6,3 +6,5 @@ output*
 *.ll
 
 /highlight
+benchmarks/
+scripts/

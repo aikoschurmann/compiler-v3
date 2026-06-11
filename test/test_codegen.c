@@ -15,7 +15,7 @@ static int run_compiled_code(const char *src) {
         return -100; // Compilation failed
     }
 
-    CodegenContext *cg_ctx = codegen_context_create(res.program, res.store, "test_module");
+    CodegenContext *cg_ctx = codegen_context_create(res.program, res.store, "test_module", 0);
     if (codegen_program(cg_ctx) != 0) {
         codegen_context_destroy(cg_ctx);
         cleanup_compilation(&res);

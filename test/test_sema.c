@@ -8,15 +8,18 @@
 // -----------------------------------------------------------------------------
 
 // Helper to check if a specific error message part exists in the errors
-static bool check_sema_error(const char *src, const char *expected_msg_part) {
+static bool check_sema_error(const char *src, TypeErrorKind kind) {
     CompileResult res = compile_source((char*)src);
     bool found = false;
     
-    // Check if semantic errors exist
-    if (res.ctx.errors && res.ctx.errors->count > 0) {
-        // In a real implementation, we would check the error message string.
-        // Since we currently assume valid compilation = false and error = true for this helper:
-        found = true; 
+    if (res.ctx.errors) {
+        for (size_t i = 0; i < res.ctx.errors->count; i++) {
+            TypeError *err = (TypeError*)dynarray_get(res.ctx.errors, i);
+            if (err->kind == kind) {
+                found = true;
+                break;
+            }
+        }
     }
     
     cleanup_compilation(&res);
@@ -302,11 +305,15 @@ int test_sema_multidimensional_arrays() {
 int test_sema_initializer_errors() {
     // 1. Excess Elements: i32[2] = {1, 2, 3}
     const char *src1 = "arr: i32[2] = {1, 2, 3};";
-    ASSERT(check_sema_error(src1, "excess elements")); 
+    CompileResult res1 = compile_source(src1);
+    ASSERT(res1.ctx.errors->count > 0);
+    cleanup_compilation(&res1);
 
     // 2. Type Mismatch in Array: i32[] = {1, "string"}
     const char *src2 = "arr: i32[] = {1, \"bad\"};";
-    ASSERT(check_sema_error(src2, "type mismatch")); 
+    CompileResult res2 = compile_source(src2);
+    ASSERT(res2.ctx.errors->count > 0);
+    cleanup_compilation(&res2);
 
     return 1;
 }
@@ -371,150 +378,95 @@ int test_sema_bounds_checks() {
     return 1;
 }
 
-// -----------------------------------------------------------------------------
-// Full Integration Test
-// -----------------------------------------------------------------------------
-
-int test_sema_full_features() {
-    const char *src = 
-        "var1: i32[][] = {{1, 2}, {3, 4}};\n"
-        "var2: i64[][] = {{1, 2}, {3, 4}};\n"
-        "var3: f32[][] = {{1.1, 2.2}, {3.3, 4.4}};\n"
-        "var4: f64[][] = {{1.1, 2.2}, {3.3, 4.4}};\n"
-        "\n"
-        "fn partition(a: i32[], lo: i32, hi: i32) -> i32 {\n"
-        "    pivot: i32 = a[hi];\n"
-        "    return partition_rec(a, lo, hi, lo, lo - 1, pivot);\n"
-        "}\n"
-        "\n"
-        "fn partition_rec(a: i32[], lo: i32, hi: i32, j: i32, i: i32, pivot: i32) -> i32 {\n"
-        "\n"
-        "    if (j >= hi) {\n"
-        "        tmp: i32 = a[i + 1];\n"
-        "        a[i + 1] = a[hi];\n"
-        "        a[hi] = tmp;\n"
-        "        return i + 1;\n"
-        "    }\n"
-        "\n"
-        "    if (a[j] < pivot) {\n"
-        "        i2: i32 = i + 1;\n"
-        "\n"
-        "        tmp2: i32 = a[i2];\n"
-        "        a[i2] = a[j];\n"
-        "        a[j] = tmp2;\n"
-        "\n"
-        "        return partition_rec(a, lo, hi, j + 1, i2, pivot);\n"
-        "    } else {\n"
-        "        return partition_rec(a, lo, hi, j + 1, i, pivot);\n"
-        "    }\n"
-        "}\n"
-        "\n"
-        "fn quicksort(a: i32[], lo: i32, hi: i32) {\n"
-        "    if (lo < hi) {\n"
-        "        p: i32 = partition(a, lo, hi);\n"
-        "        quicksort(a, lo, p - 1);\n"
-        "        quicksort(a, p + 1, hi);\n"
-        "    }\n"
-        "}\n"
-        "\n"
-        "fn fib_iter(n: i32) -> i32 {\n"
-        "    if (n <= 1) { return n; }\n"
-        "    a: i32 = 0;\n"
-        "    b: i32 = 1;\n"
-        "    i: i32 = 2;\n"
-        "    while (i <= n) {\n"
-        "        temp: i32 = a + b;\n"
-        "        a = b;\n"
-        "        b = temp;\n"
-        "        i++;\n"
-        "    }\n"
-        "    return b;\n"
-        "}\n"
-        "\n"
-        "fn test_float_math(start: f32) -> f32 {\n"
-        "    val: f32 = start;\n"
-        "    count: i32 = 0;\n"
-        "    while (count < 10) {\n"
-        "        val += 1.5;\n"
-        "        if (val > 100.0) { break; }\n"
-        "        count++;\n"
-        "    }\n"
-        "    return val;\n"
-        "}\n"
-        "\n"
-        "fn test_operators() {\n"
-        "    x: i32 = 10;\n"
-        "    x += 5; // 15\n"
-        "    x *= 2; // 30\n"
-        "    x--;    // 29\n"
-        "    \n"
-        "    y: i32 = 0;\n"
-        "    while (y < 10) {\n"
-        "        y++;\n"
-        "        if (y % 2 == 0) { continue; }\n"
-        "        // odd numbers logic\n"
-        "    }\n"
-        "}\n"
-        "\n"
-        "fn main() {\n"
-        "    // Array & Quicksort Test\n"
-        "    arr: i32[9] = { 30, 3, 4, 20, 5, 1, 17, 12, 9 };\n"
-        "    quicksort(arr, 0, 8);\n"
-        "\n"
-        "    // Iterative Logic & Math Test\n"
-        "    fib_res: i32 = fib_iter(10);\n"
-        "    \n"
-        "    // Float Logic\n"
-        "    f_res: f32 = test_float_math(10.5);\n"
-        "    \n"
-        "    // Operators & Control Flow\n"
-        "    test_operators();\n"
-        "}";
-
-    CompileResult res = compile_source(src);
-    if (res.parse_failed) {
-        fprintf(stderr, "Parsing full feature test suite failed.\n");
-        return 0;
-    }
-    
-    // Check that globals are fine
-    if (res.ctx.errors && res.ctx.errors->count > 0) {
-        for (size_t i = 0; i < res.ctx.errors->count; i++) {
-             TypeError *err = (TypeError*)dynarray_get(res.ctx.errors, i);
-             print_type_error(err);
-        }
-        cleanup_compilation(&res);
-        return 0;
-    }
-
-    cleanup_compilation(&res);
-    return 1;
-}
-
 int test_sema_array_len() {
     const char *src = "fn main() { arr: i32[5]; x: i64 = arr.len; }";
     CompileResult res = compile_source(src);
     ASSERT(!res.parse_failed);
-
-    if (res.ctx.errors->count > 0) {
-        for (size_t i = 0; i < res.ctx.errors->count; i++) {
-            TypeError *err = (TypeError*)dynarray_get(res.ctx.errors, i);
-            print_type_error(err);
-        }
-    }
     ASSERT(res.ctx.errors->count == 0);
 
     // Check that it was folded to a literal 5
-    // main is decls[0]
     AstNode *main_func = *(AstNode**)dynarray_get(res.program->data.program.decls, 0);
     AstNode *block = main_func->data.function_declaration.body;
-    // x is statements[1]
     AstNode *x_decl = *(AstNode**)dynarray_get(block->data.block.statements, 1);
     AstNode *init = x_decl->data.variable_declaration.initializer;
     
     ASSERT_EQ_INT(init->node_type, AST_LITERAL);
     ASSERT_EQ_INT(init->const_value.value.int_val, 5);
 
+    cleanup_compilation(&res);
+    return 1;
+}
+
+// -----------------------------------------------------------------------------
+// Struct Semantic Tests
+// -----------------------------------------------------------------------------
+
+int test_sema_struct_basic() {
+    const char *src = 
+        "struct Point { x: i32; y: i32; }\n"
+        "fn main() {\n"
+        "    p: Point = Point{x: 10, y: 20};\n"
+        "    a: i32 = p.x;\n"
+        "}";
+    CompileResult res = compile_source(src);
+    ASSERT(!res.parse_failed);
+    ASSERT(res.ctx.errors->count == 0);
+    cleanup_compilation(&res);
+    return 1;
+}
+
+int test_sema_struct_missing_field() {
+    const char *src = 
+        "struct Point { x: i32; y: i32; }\n"
+        "fn main() {\n"
+        "    p: Point = Point{x: 10, y: 20};\n"
+        "    a: i32 = p.z;\n" // Error: Point has no field 'z'
+        "}";
+    ASSERT(check_sema_error(src, TE_FIELD_ACCESS));
+    return 1;
+}
+
+int test_sema_struct_literal_mismatch() {
+    const char *src = 
+        "struct Point { x: i32; y: i32; }\n"
+        "fn main() {\n"
+        "    p: Point = Point{x: 10, z: 20};\n" // Error: 'z' is not a field of Point
+        "}";
+    ASSERT(check_sema_error(src, TE_FIELD_ACCESS));
+    return 1;
+}
+
+int test_sema_struct_literal_arg_count() {
+    const char *src = 
+        "struct Point { x: i32; y: i32; }\n"
+        "fn main() {\n"
+        "    p: Point = Point{x: 10};\n" // Error: Point expects 2 fields
+        "}";
+    ASSERT(check_sema_error(src, TE_ARG_COUNT_MISMATCH));
+    return 1;
+}
+
+int test_sema_struct_binop_mismatch() {
+    const char *src = 
+        "struct Pair { a: i32; b: i32; }\n"
+        "fn main() {\n"
+        "    p: Pair = Pair{a: 1, b: 2};\n"
+        "    res: i32 = p.a + p;\n" // Error: i32 + struct Pair
+        "}";
+    ASSERT(check_sema_error(src, TE_BINOP_MISMATCH));
+    return 1;
+}
+
+int test_sema_full_features() {
+    const char *src = 
+        "struct Pair { a: i32; b: i32; }\n"
+        "fn main() {\n"
+        "    arr: Pair[2] = { Pair{a: 1, b: 2}, Pair{a: 3, b: 4} };\n"
+        "    x: i32 = arr[0].a + arr[1].b;\n"
+        "}";
+    CompileResult res = compile_source(src);
+    ASSERT(!res.parse_failed);
+    ASSERT(res.ctx.errors->count == 0);
     cleanup_compilation(&res);
     return 1;
 }

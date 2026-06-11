@@ -86,9 +86,6 @@ Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
                     Symbol *sym = scope_lookup_symbol(scope, name_res);
                     if (sym) {
                         if (sym->kind == SYMBOL_VALUE_TYPE) return sym->type;
-                        else printf("DEBUG: Found symbol '%s' but kind is %d, expected %d\n", ((Slice*)name_res->key)->ptr, sym->kind, SYMBOL_VALUE_TYPE);
-                    } else {
-                        printf("DEBUG: scope_lookup_symbol returned NULL for '%s'\n", ((Slice*)name_res->key)->ptr);
                     }
                 }
                 const char *name_str = ((Slice*)name_res->key)->ptr;

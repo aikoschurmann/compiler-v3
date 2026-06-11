@@ -44,6 +44,11 @@ int test_sema_initializer_errors();
 int test_sema_const_folding();
 int test_sema_bounds_checks();
 int test_sema_array_len();
+int test_sema_struct_basic();
+int test_sema_struct_missing_field();
+int test_sema_struct_literal_mismatch();
+int test_sema_struct_literal_arg_count();
+int test_sema_struct_binop_mismatch();
 
 // Codegen Tests
 int test_codegen_basic_arithmetic();
@@ -120,6 +125,11 @@ int main() {
     run_test("Sema: Const Folding", test_sema_const_folding);
     run_test("Sema: Bounds Checks", test_sema_bounds_checks);
     run_test("Sema: Array Len", test_sema_array_len);
+    run_test("Sema: Struct Basic", test_sema_struct_basic);
+    run_test("Sema: Struct Missing Field", test_sema_struct_missing_field);
+    run_test("Sema: Struct Literal Mismatch", test_sema_struct_literal_mismatch);
+    run_test("Sema: Struct Literal Arg Count", test_sema_struct_literal_arg_count);
+    run_test("Sema: Struct Binop Mismatch", test_sema_struct_binop_mismatch);
 
     // Codegen Tests
     run_test("Codegen: Basic Arithmetic", test_codegen_basic_arithmetic);
