@@ -124,6 +124,11 @@ void print_type_error(TypeError *err) {
         case TE_FIELD_ACCESS:
             fprintf(stderr, "Type has no field named '%s%s%s'.\n", COL_YELLOW, err->as.name.name, COL_RESET);
             break;
+        case TE_NOT_MEMBER_ACCESSIBLE:
+            fprintf(stderr, "Expression of type '");
+            type_print(stderr, err->as.bad_usage.actual);
+            fprintf(stderr, "' does not support member access.\n");
+            break;
         case TE_CONST_ASSIGN:
              fprintf(stderr, "Cannot assign to immutable variable/parameter.\n");
              break;

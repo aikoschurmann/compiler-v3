@@ -81,11 +81,14 @@ Type *resolve_ast_type(TypeCheckContext *ctx, Scope *scope, AstNode *node) {
             if (name_res && name_res->key) {
                 Type *prim = (Type*)hashmap_get(store->primitive_registry, name_res->key, ptr_hash, ptr_cmp);
                 if (prim) return prim;
+                
+                const char *name_str = ((Slice*)name_res->key)->ptr;
+                fprintf(stderr, "DEBUG: Failed to resolve primitive type '%s' (key=%p)\n", name_str, name_res->key);
+                
                 if (scope) {
                     Symbol *sym = scope_lookup_symbol(scope, name_res);
                     if (sym && sym->kind == SYMBOL_VALUE_TYPE) return sym->type;
                 }
-                const char *name_str = ((Slice*)name_res->key)->ptr;
                 TypeError err = { .kind = TE_UNKNOWN_TYPE, .span = node->span, .filename = ctx->filename, .as.name.name = name_str };
                 dynarray_push_value(ctx->errors, &err);
             }
@@ -326,7 +329,9 @@ static void check_statement(TypeCheckContext *ctx, Scope *scope, AstNode *stmt, 
             if (ret->expression) actual = check_expression(ctx, scope, ret->expression, return_type);
             
             if (actual && return_type && actual != return_type) {
-                 if (!type_can_implicit_cast(return_type, actual)) {
+                 if (type_can_implicit_cast(return_type, actual)) {
+                    insert_cast(ctx, ret->expression, return_type);
+                 } else {
                     TypeError err = { .kind = TE_TYPE_MISMATCH, .span = stmt->span, .filename = ctx->filename, .as.mismatch = { .expected = return_type, .actual = actual } };
                     dynarray_push_value(ctx->errors, &err);
                  }

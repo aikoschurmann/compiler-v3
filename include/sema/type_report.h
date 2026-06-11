@@ -32,6 +32,7 @@ typedef enum {
     TE_NOT_CALLABLE,       
     TE_NOT_INDEXABLE,      
     TE_FIELD_ACCESS,       
+    TE_NOT_MEMBER_ACCESSIBLE, // New: Type does not support member access
     TE_INDEX_OUT_OF_BOUNDS, // New: Array index out of bounds
     
     TE_CONST_ASSIGN,       

@@ -637,6 +637,61 @@ Type* check_binary(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *exp
     return result_type;
 }
 
+Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
+    AstMemberExpr *member_expr = &expr->data.member_expr;
+    
+    // 1. Resolve the target (e.g., the `arr` in `arr.len`)
+    Type *target_type = check_expression(ctx, scope, member_expr->target, NULL);
+    if (!target_type) return NULL;
+
+    // 2. Dispatch based on the type we are accessing
+    switch (target_type->kind) {
+        
+        case TYPE_ARRAY:
+            // O(1) Pointer comparison using our pre-interned keyword!
+            if (member_expr->member == ctx->store->kw_len) {
+                
+                // If it's a fixed-size array, we do Zero-Cost Abstraction!
+                // Morph the node directly into an Integer Literal.
+                if (target_type->as.array.size_known) {
+                    expr->node_type = AST_LITERAL;
+                    expr->data.literal.type = INT_LITERAL;
+                    expr->data.literal.value.int_val = target_type->as.array.size;
+                    expr->is_const_expr = 1;
+                    expr->const_value.type = INT_LITERAL;
+                    expr->const_value.value.int_val = target_type->as.array.size;
+                    expr->type = ctx->store->t_i64;
+                    return ctx->store->t_i64;
+                }
+                
+                // If it's a dynamic slice (!size_known), it's evaluated at runtime.
+                expr->type = ctx->store->t_i64;
+                return ctx->store->t_i64;
+            } else {
+                const char *field_name = "<unknown>";
+                if (member_expr->member && member_expr->member->key) {
+                    field_name = ((Slice*)member_expr->member->key)->ptr;
+                }
+                TypeError err = { .kind = TE_FIELD_ACCESS, .span = expr->span, .filename = ctx->filename, .as.name.name = field_name };
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+
+        case TYPE_STRUCT:
+            // FUTURE: look up the field here.
+            // Symbol *field = lookup_struct_field(target_type, member_expr->member);
+            // return field->type;
+            return NULL;
+
+        default:
+            {
+                TypeError err = { .kind = TE_NOT_MEMBER_ACCESSIBLE, .span = member_expr->target->span, .filename = ctx->filename, .as.bad_usage.actual = target_type };
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+    }
+}
+
 Type* check_expression(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *expected_type) {
     if (!expr) return NULL;
     
@@ -655,6 +710,9 @@ Type* check_expression(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type 
             break;
         case AST_SUBSCRIPT_EXPR:
             result_type = check_subscript(ctx, scope, expr);
+            break;
+        case AST_MEMBER_EXPR:
+            result_type = check_member_expr(ctx, scope, expr);
             break;
         case AST_BINARY_EXPR:
             result_type = check_binary(ctx, scope, expr, expected_type);

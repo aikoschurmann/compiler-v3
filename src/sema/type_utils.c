@@ -35,9 +35,10 @@ bool type_can_implicit_cast(Type *target, Type *source) {
     if (target == source) return true;
 
     // 1. Numeric Promotions
-    // Int -> Int (Promotion)
+    // Int -> Int (Promotion & Narrowing)
     if (type_is_integer(source) && type_is_integer(target)) {
         if (source->as.primitive == PRIM_I32 && target->as.primitive == PRIM_I64) return true;
+        if (source->as.primitive == PRIM_I64 && target->as.primitive == PRIM_I32) return true; // Allow narrowing for now
     }
     // Float -> Float (Promotion)
     if (type_is_float(source) && type_is_float(target)) {

@@ -81,6 +81,9 @@ typedef struct TypeStore {
     Type *t_bool;
     Type *t_char;
     Type *t_str;
+
+    // Pre-interned common property names
+    InternResult *kw_len; 
 } TypeStore;
 
 TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, DenseArenaInterner *keywords);
