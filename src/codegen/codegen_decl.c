@@ -85,7 +85,6 @@ void codegen_decl_proto(CodegenContext *ctx, AstNode *decl) {
         if (allocated_name) free(allocated_name);
     }
 }
-
 void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
     if (decl->node_type == AST_FUNCTION_DECLARATION) {
         AstFunctionDeclaration *fdecl = &decl->data.function_declaration;
@@ -108,6 +107,7 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
 
             ctx->locals = codegen_map_create(ctx, ctx->locals);
             ctx->current_func_type = fn_type_sema;
+            ctx->deferred_actions->count = 0; // Clear for new function
 
             bool sret = type_is_indirect(ctx, fn_type_sema->as.func.return_type);
             if (sret) {
@@ -144,17 +144,25 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
                 }
             }
             
-            // Generate the user's actual code
-            codegen_expr_stmt(ctx, fdecl->body);
+            // Generate the user's actual code directly in the function scope
+            if (fdecl->body->node_type == AST_BLOCK) {
+                DynArray *stmts = fdecl->body->data.block.statements;
+                for (size_t i = 0; i < stmts->count; i++) {
+                    AstNode *stmt = *(AstNode**)dynarray_get(stmts, i);
+                    codegen_expr(ctx, stmt);
+                }
+            } else {
+                codegen_expr_stmt(ctx, fdecl->body);
+            }
 
-            CodegenMap *old = ctx->locals;
-            ctx->locals = old->parent;
-            codegen_map_destroy(old);
-            ctx->current_func_type = NULL;
-            ctx->sret_ptr = NULL;
-            
+            // Run deferred actions before implicit return and BEFORE destroying scope
             LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
             if (!LLVMGetBasicBlockTerminator(current_block)) {
+                for (int i = (int)ctx->deferred_actions->count - 1; i >= 0; i--) {
+                    AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
+                    codegen_expr_stmt(ctx, body);
+                }
+                
                 LLVMTypeRef ret_ty = LLVMGetReturnType(LLVMGlobalGetValueType(func));
                 if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind) {
                     LLVMBuildRetVoid(ctx->builder);
@@ -163,8 +171,13 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
                 }
             }
 
+            CodegenMap *old = ctx->locals;
+            ctx->locals = old->parent;
+            codegen_map_destroy(old);
+            ctx->current_func_type = NULL;
+            ctx->sret_ptr = NULL;
+            
         } else if (fdecl->link_name) {
-            // ... (linkage logic remains)
             Slice *s = (Slice*)fdecl->link_name->key;
             char *ext_name = malloc(s->len + 1);
             memcpy(ext_name, s->ptr, s->len);

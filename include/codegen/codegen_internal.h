@@ -36,6 +36,10 @@ struct CodegenContext {
     // For sret
     Type *current_func_type;
     LLVMValueRef sret_ptr;
+    
+    // For defer
+    DynArray *deferred_actions;
+    size_t loop_defer_count;
 };
 
 /* --- Internal Helpers --- */

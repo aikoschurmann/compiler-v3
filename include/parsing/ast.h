@@ -33,6 +33,7 @@ typedef enum {
     AST_RETURN_STATEMENT,
     AST_BREAK_STATEMENT,
     AST_CONTINUE_STATEMENT,
+    AST_DEFER_STATEMENT,
     AST_EXPR_STATEMENT,
 
     /* expressions */
@@ -157,6 +158,10 @@ typedef struct {
     AstNode *expression;
 } AstReturnStatement;
 
+typedef struct {
+    AstNode *body;
+} AstDeferStatement;
+
 typedef struct { } AstBreakStatement;
 typedef struct { } AstContinueStatement;
 
@@ -253,6 +258,7 @@ struct AstNode {
         AstWhileStatement while_statement;
         AstForStatement for_statement;
         AstReturnStatement return_statement;
+        AstDeferStatement defer_statement;
         AstBreakStatement break_statement;
         AstContinueStatement continue_statement;
         AstExprStatement expr_statement;

@@ -603,6 +603,10 @@ static void check_statement(TypeCheckContext *ctx, Scope *scope, AstNode *stmt, 
             }
             break;
         }
+        case AST_DEFER_STATEMENT: {
+            check_statement(ctx, scope, stmt->data.defer_statement.body, return_type);
+            break;
+        }
         case AST_BLOCK: 
             check_block(ctx, scope, stmt, return_type, true); 
             break;

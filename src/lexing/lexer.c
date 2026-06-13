@@ -33,6 +33,7 @@ static const struct {
     {"return", TOK_RETURN},
     {"break", TOK_BREAK},
     {"continue", TOK_CONTINUE},
+    {"defer", TOK_DEFER},
     {"const", TOK_CONST},
     {"pub", TOK_PUB},
     {"import", TOK_IMPORT},
@@ -633,6 +634,7 @@ const char* token_type_to_string(TokenType type) {
         case TOK_EOF: return "EOF";
         case TOK_AS: return "AS";
         case TOK_VOID: return "VOID";
+        case TOK_DEFER: return "DEFER";
         default: return "UNKNOWN";
     }
 }

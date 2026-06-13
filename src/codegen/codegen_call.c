@@ -150,7 +150,8 @@ LLVMValueRef codegen_expr_call(CodegenContext *ctx, AstNode *expr) {
         if (!args[idx-1]) ICE("Failed to generate code for call argument %zu", i);
     }
     
-    LLVMValueRef call_inst = LLVMBuildCall2(ctx->builder, func_type, callee, args, (unsigned)llvm_arg_count, sret ? "" : "calltmp");
+    bool is_void = LLVMGetTypeKind(LLVMGetReturnType(func_type)) == LLVMVoidTypeKind;
+    LLVMValueRef call_inst = LLVMBuildCall2(ctx->builder, func_type, callee, args, (unsigned)llvm_arg_count, (sret || is_void) ? "" : "calltmp");
     
     // Add call-site attributes to match function signature
     unsigned attr_idx = 1;

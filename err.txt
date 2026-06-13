@@ -1,0 +1,8 @@
+Call parameter type does not match function signature!
+  %byval_temp = alloca %Large, align 8
+ %Large = type { i64, i64, i64 }  %calltmp = call i64 @take_large(ptr byval(%Large) %byval_temp)
+LLVM Verification Error: Call parameter type does not match function signature!
+  %byval_temp = alloca %Large, align 8
+ %Large = type { i64, i64, i64 }  %calltmp = call i64 @take_large(ptr byval(%Large) %byval_temp)
+
+Error: Code generation failed

@@ -57,12 +57,7 @@ int main(int argc, char **argv) {
     DenseArenaInterner *strings = intern_table_create(hashmap_create(128), arena, string_copy_func, slice_hash, slice_cmp);
 
     /* Pre-intern keywords */
-    const char *kw_list[] = {"fn", "if", "else", "while", "for", "return", "break", "continue", "const", "pub", "import", "struct", "as", "i32", "i64", "bool", "f32", "f64", "str", "char", "void", "true", "false", NULL};
-    const TokenType kw_types[] = {TOK_FN, TOK_IF, TOK_ELSE, TOK_WHILE, TOK_FOR, TOK_RETURN, TOK_BREAK, TOK_CONTINUE, TOK_CONST, TOK_PUB, TOK_IMPORT, TOK_STRUCT, TOK_AS, TOK_I32, TOK_I64, TOK_BOOL, TOK_F32, TOK_F64, TOK_STRING, TOK_CHAR, TOK_VOID, TOK_TRUE, TOK_FALSE};
-    for(int i=0; kw_list[i]; i++) {
-        Slice s = {(char*)kw_list[i], strlen(kw_list[i])};
-        intern(keywords, &s, (void*)(uintptr_t)kw_types[i]);
-    }
+    lexer_populate_default_keywords(keywords);
 
     ModuleLoader *loader = module_loader_create(arena, &opts, keywords, identifiers, strings);
 

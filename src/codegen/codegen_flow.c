@@ -64,8 +64,11 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
 
         LLVMBasicBlockRef old_cond = ctx->loop_cond_bb;
         LLVMBasicBlockRef old_end  = ctx->loop_end_bb;
+        size_t old_loop_defer      = ctx->loop_defer_count;
+
         ctx->loop_cond_bb = cond_bb;
         ctx->loop_end_bb  = end_bb;
+        ctx->loop_defer_count = ctx->deferred_actions->count;
 
         LLVMPositionBuilderAtEnd(ctx->builder, body_bb);
         codegen_expr(ctx, whl->body);
@@ -74,6 +77,7 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
 
         ctx->loop_cond_bb = old_cond;
         ctx->loop_end_bb  = old_end;
+        ctx->loop_defer_count = old_loop_defer;
 
         LLVMPositionBuilderAtEnd(ctx->builder, end_bb);
         return NULL;
@@ -84,7 +88,6 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
         LLVMValueRef     func = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
 
         ctx->locals = codegen_map_create(ctx, ctx->locals);
-
         if (fst->init) codegen_expr(ctx, fst->init);
 
         LLVMBasicBlockRef cond_bb = LLVMAppendBasicBlockInContext(ctx->context, func, "for.cond");
@@ -98,14 +101,11 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
         if (fst->condition) {
             LLVMValueRef cond    = codegen_expr(ctx, fst->condition);
             LLVMTypeRef  cond_ty = LLVMTypeOf(cond);
-
             if (LLVMGetTypeKind(cond_ty) == LLVMPointerTypeKind) {
                 cond = LLVMBuildICmp(ctx->builder, LLVMIntNE, cond, LLVMConstNull(cond_ty), "cond");
-            } else if (LLVMGetTypeKind(cond_ty) == LLVMIntegerTypeKind &&
-                       LLVMGetIntTypeWidth(cond_ty) > 1) {
+            } else if (LLVMGetTypeKind(cond_ty) == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(cond_ty) > 1) {
                 cond = LLVMBuildICmp(ctx->builder, LLVMIntNE, cond, LLVMConstInt(cond_ty, 0, 0), "cond");
-            } else if (LLVMGetTypeKind(cond_ty) == LLVMFloatTypeKind ||
-                       LLVMGetTypeKind(cond_ty) == LLVMDoubleTypeKind) {
+            } else if (LLVMGetTypeKind(cond_ty) == LLVMFloatTypeKind || LLVMGetTypeKind(cond_ty) == LLVMDoubleTypeKind) {
                 cond = LLVMBuildFCmp(ctx->builder, LLVMRealUNE, cond, LLVMConstNull(cond_ty), "cond");
             }
             LLVMBuildCondBr(ctx->builder, cond, body_bb, end_bb);
@@ -115,8 +115,11 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
 
         LLVMBasicBlockRef old_cond = ctx->loop_cond_bb;
         LLVMBasicBlockRef old_end  = ctx->loop_end_bb;
+        size_t old_loop_defer      = ctx->loop_defer_count;
+
         ctx->loop_cond_bb = post_bb;
         ctx->loop_end_bb  = end_bb;
+        ctx->loop_defer_count = ctx->deferred_actions->count;
 
         LLVMPositionBuilderAtEnd(ctx->builder, body_bb);
         codegen_expr(ctx, fst->body);
@@ -130,9 +133,9 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
 
         ctx->loop_cond_bb = old_cond;
         ctx->loop_end_bb  = old_end;
+        ctx->loop_defer_count = old_loop_defer;
 
         LLVMPositionBuilderAtEnd(ctx->builder, end_bb);
-
         CodegenMap *old = ctx->locals;
         ctx->locals = old->parent;
         codegen_map_destroy(old);
@@ -141,12 +144,24 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
     }
 
     if (expr->node_type == AST_BREAK_STATEMENT) {
-        if (ctx->loop_end_bb) LLVMBuildBr(ctx->builder, ctx->loop_end_bb);
+        if (ctx->loop_end_bb) {
+            for (int i = (int)ctx->deferred_actions->count - 1; i >= (int)ctx->loop_defer_count; i--) {
+                AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
+                codegen_expr_stmt(ctx, body);
+            }
+            LLVMBuildBr(ctx->builder, ctx->loop_end_bb);
+        }
         return NULL;
     }
 
     if (expr->node_type == AST_CONTINUE_STATEMENT) {
-        if (ctx->loop_cond_bb) LLVMBuildBr(ctx->builder, ctx->loop_cond_bb);
+        if (ctx->loop_cond_bb) {
+            for (int i = (int)ctx->deferred_actions->count - 1; i >= (int)ctx->loop_defer_count; i--) {
+                AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
+                codegen_expr_stmt(ctx, body);
+            }
+            LLVMBuildBr(ctx->builder, ctx->loop_cond_bb);
+        }
         return NULL;
     }
 

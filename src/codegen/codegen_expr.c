@@ -205,6 +205,10 @@ LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr) {
         case AST_BINARY_EXPR: case AST_UNARY_EXPR: case AST_CAST: case AST_ASSIGNMENT_EXPR: return codegen_expr_ops(ctx, expr);
         case AST_IF_STATEMENT: case AST_WHILE_STATEMENT: case AST_FOR_STATEMENT: case AST_BREAK_STATEMENT: case AST_CONTINUE_STATEMENT: return codegen_expr_flow(ctx, expr);
         case AST_BLOCK: case AST_RETURN_STATEMENT: case AST_VARIABLE_DECLARATION: case AST_INITIALIZER_LIST: case AST_EXPR_STATEMENT: return codegen_expr_stmt(ctx, expr);
+        case AST_DEFER_STATEMENT: {
+            dynarray_push_value(ctx->deferred_actions, &expr->data.defer_statement.body);
+            return NULL;
+        }
         default: {
             ICE("Node type %d missing codegen implementation.", expr->node_type);
             return NULL;

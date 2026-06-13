@@ -6,11 +6,23 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
         LLVMValueRef last_val = NULL;
 
         ctx->locals = codegen_map_create(ctx, ctx->locals);
+        
+        // 1. Remember how many deferred actions existed before this block
+        size_t previous_defer_count = ctx->deferred_actions->count;
 
         for (size_t i = 0; i < stmts->count; i++) {
             AstNode *stmt = *(AstNode**)dynarray_get(stmts, i);
             last_val = codegen_expr(ctx, stmt);
         }
+
+        // 2. Execute any deferred actions added DURING this block (in LIFO order)
+        for (int i = (int)ctx->deferred_actions->count - 1; i >= (int)previous_defer_count; i--) {
+            AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
+            codegen_expr_stmt(ctx, body);
+        }
+        
+        // 3. Shrink the array back to its previous size
+        ctx->deferred_actions->count = previous_defer_count;
 
         CodegenMap *old = ctx->locals;
         ctx->locals = old->parent;
@@ -20,6 +32,12 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
     }
 
     if (expr->node_type == AST_RETURN_STATEMENT) {
+        // Execute deferred actions first
+        for (int i = (int)ctx->deferred_actions->count - 1; i >= 0; i--) {
+            AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
+            codegen_expr_stmt(ctx, body);
+        }
+
         Type *fn_type = ctx->current_func_type;
         bool sret = type_is_indirect(ctx, fn_type->as.func.return_type);
         
@@ -97,6 +115,11 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
 
     if (expr->node_type == AST_EXPR_STATEMENT) {
         return codegen_expr(ctx, expr->data.expr_statement.expression);
+    }
+
+    if (expr->node_type == AST_DEFER_STATEMENT) {
+        dynarray_push_value(ctx->deferred_actions, &expr->data.defer_statement.body);
+        return NULL;
     }
 
     return NULL;

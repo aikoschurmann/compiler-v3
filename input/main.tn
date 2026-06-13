@@ -1,44 +1,18 @@
-import stdlib;
-
-struct Node {
-    val: i32;
-    next: *Node;
-}
-
-pub const b: i32 = 10;
-
 fn main() {
-    a: Allocator = get_c_allocator();
-
+    print("Start loop\n");
     
-    // [10] -> [20] -> [30] -> null
-    print("Allocating nodes...\n");
-    
-    head: *Node = @alloc(Node, a, 1);
-    head.val = 10;
-    
-    second: *Node = @alloc(Node, a, 1);
-    second.val = 20;
-    head.next = second;
-    
-    third: *Node = @alloc(Node, a, 1);
-    third.val = 30;
-    second.next = third;
-    third.next = 0 as *Node; // null terminator
-    
-    print("Traversing heap list: ");
-    curr: *Node = head;
-    while curr != (0 as *Node) {
-        print(curr.val);
-        print(" -> ");
-        curr = curr.next;
+    i: i64 = 0;
+    while i < 3 {
+        defer print("Deferred in loop iteration\n");
+        print("Loop body\n");
+        
+        if i == 1 {
+            print("Breaking early!\n");
+            break;
+        }
+        
+        i = i + 1;
     }
-    print("null\n");
     
-    print("Freeing nodes...\n");
-    @free(a, third);
-    @free(a, second);
-    @free(a, head);
-    
-    print("Done!\n");
+    print("End program\n");
 }

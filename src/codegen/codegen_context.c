@@ -1,4 +1,5 @@
 #include "codegen_internal.h"
+#include "dynamic_array.h"
 
 CodegenMap* codegen_map_create(CodegenContext *ctx, CodegenMap *parent) {
     CodegenMap *m = malloc(sizeof(CodegenMap));
@@ -47,12 +48,17 @@ CodegenContext* codegen_context_create(AstNode *program, TypeStore *store, const
     ctx->opt_level = opt_level;
     ctx->current_func_type = NULL;
     ctx->sret_ptr = NULL;
+    ctx->deferred_actions = malloc(sizeof(DynArray));
+    dynarray_init(ctx->deferred_actions, sizeof(AstNode*));
+    ctx->loop_defer_count = 0;
     return ctx;
 }
 
 void codegen_context_destroy(CodegenContext *ctx) {
     hashmap_destroy(ctx->globals, NULL, NULL);
     hashmap_destroy(ctx->type_cache, NULL, NULL);
+    dynarray_free(ctx->deferred_actions);
+    free(ctx->deferred_actions);
     LLVMDisposeTargetData(ctx->target_data);
     while (ctx->locals) {
         CodegenMap *parent = ctx->locals->parent;

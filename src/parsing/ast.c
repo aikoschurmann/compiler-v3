@@ -19,6 +19,7 @@ static const char *node_type_to_string(AstNodeType type) {
         case AST_RETURN_STATEMENT: return "ReturnStatement";
         case AST_BREAK_STATEMENT: return "BreakStatement";
         case AST_CONTINUE_STATEMENT: return "ContinueStatement";
+        case AST_DEFER_STATEMENT: return "DeferStatement";
         case AST_EXPR_STATEMENT: return "ExpressionStatement";
         case AST_LITERAL: return "Literal";
         case AST_IDENTIFIER: return "Identifier";
@@ -598,6 +599,14 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
                 print_tree_prefix(depth + 1, 1);
                 printf("expression:\n");
                 print_ast_with_prefix(node->data.return_statement.expression, depth + 2, 1, keywords, identifiers, strings);
+            }
+            break;
+
+        case AST_DEFER_STATEMENT:
+            if (node->data.defer_statement.body) {
+                print_tree_prefix(depth + 1, 1);
+                printf("body:\n");
+                print_ast_with_prefix(node->data.defer_statement.body, depth + 2, 1, keywords, identifiers, strings);
             }
             break;
 

@@ -1540,6 +1540,37 @@ AstNode *parse_block(Parser *p, ParseError *err) {
 
 
 
+AstNode *parse_defer_statement(Parser *p, ParseError *err) {
+    Token *defer_tok = consume(p, TOK_DEFER);
+    if (!defer_tok) {
+        if (err) create_parse_error(err, p, "expected 'defer' keyword", current_token(p));
+        return NULL;
+    }
+    Span start_span = defer_tok->span;
+
+    AstNode *defer_stmt = new_node_or_err(p, AST_DEFER_STATEMENT, err, "out of memory creating defer statement node");
+    if (!defer_stmt) return NULL;
+
+    Token *current = current_token(p);
+    if (!current) {
+        if (err) create_parse_error(err, p, "expected block or expression after 'defer'", NULL);
+        return NULL;
+    }
+
+    AstNode *body = NULL;
+    if (current->type == TOK_LBRACE) {
+        body = parse_block(p, err);
+    } else {
+        body = parse_statement(p, err);
+    }
+
+    if (!body) return NULL;
+    defer_stmt->data.defer_statement.body = body;
+    defer_stmt->span = span_join(&start_span, &body->span);
+
+    return defer_stmt;
+}
+
 AstNode *parse_statement(Parser *p, ParseError *err) {
     Token *tok = current_token(p);
     if (!tok) {
@@ -1566,6 +1597,9 @@ AstNode *parse_statement(Parser *p, ParseError *err) {
             break;
         case TOK_CONTINUE:
             stmt = parse_continue_statement(p, err);
+            break;
+        case TOK_DEFER:
+            stmt = parse_defer_statement(p, err);
             break;
         case TOK_LBRACE:
             stmt = parse_block(p, err);
@@ -1827,5 +1861,16 @@ AstNode *parse_expression_statement(Parser *p, ParseError *err) {
         create_parse_error(err, p, "expected ';' at end of expression statement", current_token(p));
         return NULL;
     }
-    return expr;
+    
+    // Create the wrapper node!
+    AstNode *stmt = ast_create_node(AST_EXPR_STATEMENT, p->arena, p->filename);
+    if (!stmt) {
+        if (err) create_parse_error(err, p, "out of memory creating expression statement node", NULL);
+        return NULL;
+    }
+    
+    stmt->data.expr_statement.expression = expr;
+    stmt->span = span_join(&expr->span, &semi->span);
+    
+    return stmt;
 }
