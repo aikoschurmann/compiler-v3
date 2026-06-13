@@ -83,7 +83,7 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
         AstForStatement *fst  = &expr->data.for_statement;
         LLVMValueRef     func = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
 
-        ctx->locals = codegen_map_create(ctx->locals);
+        ctx->locals = codegen_map_create(ctx, ctx->locals);
 
         if (fst->init) codegen_expr(ctx, fst->init);
 

@@ -1,8 +1,8 @@
 #include "codegen_internal.h"
 
-CodegenMap* codegen_map_create(CodegenMap *parent) {
+CodegenMap* codegen_map_create(CodegenContext *ctx, CodegenMap *parent) {
     CodegenMap *m = malloc(sizeof(CodegenMap));
-    m->map = hashmap_create(1024);
+    m->map = hashmap_create(8);
     m->parent = parent;
     return m;
 }
@@ -26,23 +26,34 @@ LLVMValueRef codegen_map_get(CodegenMap *m, void *key) {
     return NULL;
 }
 
-CodegenContext* codegen_context_create(AstNode *program, TypeStore *store, const char *module_name, int opt_level) {  
+CodegenContext* codegen_context_create(AstNode *program, TypeStore *store, const char *module_name, int opt_level) {
     CodegenContext *ctx = malloc(sizeof(CodegenContext));
     ctx->program = program;
     ctx->store = store;
     ctx->context = LLVMContextCreate();
     ctx->module = LLVMModuleCreateWithNameInContext(module_name, ctx->context);
     ctx->builder = LLVMCreateBuilderInContext(ctx->context);
+
+    // Set up target data for ABI
+    LLVMInitializeNativeTarget();
+    ctx->target_data = LLVMCreateTargetData(LLVMGetDataLayoutStr(ctx->module));
+    LLVMSetModuleDataLayout(ctx->module, ctx->target_data);
+
     ctx->globals = hashmap_create(1024);
-    ctx->locals = codegen_map_create(NULL);
+    ctx->type_cache = hashmap_create(256);
+    ctx->locals = codegen_map_create(ctx, NULL);
     ctx->loop_cond_bb = NULL;
     ctx->loop_end_bb = NULL;
     ctx->opt_level = opt_level;
+    ctx->current_func_type = NULL;
+    ctx->sret_ptr = NULL;
     return ctx;
 }
 
 void codegen_context_destroy(CodegenContext *ctx) {
     hashmap_destroy(ctx->globals, NULL, NULL);
+    hashmap_destroy(ctx->type_cache, NULL, NULL);
+    LLVMDisposeTargetData(ctx->target_data);
     while (ctx->locals) {
         CodegenMap *parent = ctx->locals->parent;
         codegen_map_destroy(ctx->locals);

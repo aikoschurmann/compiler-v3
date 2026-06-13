@@ -3,18 +3,53 @@
 LLVMTypeRef get_llvm_function_type(CodegenContext *ctx, Type *t) {
     if (!t || t->kind != TYPE_FUNCTION) return LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), NULL, 0, 0);
 
-    LLVMTypeRef ret_type = get_llvm_type(ctx, t->as.func.return_type);
+    bool sret = type_is_indirect(ctx, t->as.func.return_type);
+    LLVMTypeRef ret_type = sret ? LLVMVoidTypeInContext(ctx->context) : get_llvm_type(ctx, t->as.func.return_type);
+    
     size_t param_count = t->as.func.param_count;
-    LLVMTypeRef *param_types = NULL;
-    if (param_count > 0) {
-        param_types = malloc(sizeof(LLVMTypeRef) * param_count);
-        for (size_t i = 0; i < param_count; i++) {
-            param_types[i] = get_llvm_type(ctx, t->as.func.params[i]);
+    size_t llvm_arg_count = param_count + (sret ? 1 : 0);
+    LLVMTypeRef *llvm_params = malloc(sizeof(LLVMTypeRef) * llvm_arg_count);
+
+    size_t idx = 0;
+    if (sret) {
+        llvm_params[idx++] = LLVMPointerType(get_llvm_type(ctx, t->as.func.return_type), 0);
+    }
+
+    for (size_t i = 0; i < param_count; i++) {
+        Type *param_ty = t->as.func.params[i];
+        if (type_is_indirect(ctx, param_ty)) {
+            llvm_params[idx++] = LLVMPointerType(get_llvm_type(ctx, param_ty), 0);
+        } else {
+            llvm_params[idx++] = get_llvm_type(ctx, param_ty);
         }
     }
-    LLVMTypeRef fn_ty = LLVMFunctionType(ret_type, param_types, param_count, 0);
-    if (param_types) free(param_types);
+
+    LLVMTypeRef fn_ty = LLVMFunctionType(ret_type, llvm_params, (unsigned)llvm_arg_count, 0);
+    free(llvm_params);
     return fn_ty;
+}
+
+bool type_is_address_only(Type *t) {
+    if (!t) ICE("type_is_address_only: NULL type reached codegen");
+    switch (t->kind) {
+        case TYPE_FUNCTION: return true;                         // functions decay to pointer
+        case TYPE_ARRAY:    return t->as.array.size_known;       // [N]T lives at its address; T[] (slice) is loaded as a value
+        case TYPE_VOID:     return true;                         // nothing to load
+        default:            return false;                        // primitives, pointers, slices-as-struct, structs -> load by value
+    }
+}
+
+bool type_is_indirect(CodegenContext *ctx, Type *t) {
+    if (t->kind != TYPE_STRUCT) return false;
+    LLVMTypeRef llvm_ty = get_llvm_type(ctx, t);
+    // Threshold: 16 bytes (2 x 64-bit registers)
+    return LLVMABISizeOfType(ctx->target_data, llvm_ty) > 16;
+}
+
+LLVMValueRef codegen_load_value(CodegenContext *ctx, LLVMValueRef ptr, Type *type) {
+    if (!ptr) ICE("codegen_load_value: NULL lvalue for type kind %d", type ? type->kind : -1);
+    if (type_is_address_only(type)) return ptr;
+    return LLVMBuildLoad2(ctx->builder, get_llvm_type(ctx, type), ptr, "loadtmp");
 }
 
 LLVMTypeRef get_llvm_type(CodegenContext *ctx, Type *t) {
@@ -48,19 +83,20 @@ LLVMTypeRef get_llvm_type(CodegenContext *ctx, Type *t) {
                 return LLVMStructTypeInContext(ctx->context, elements, 2, 0);
             }
         case TYPE_STRUCT: {
+            // Check cache first
+            LLVMTypeRef cached = hashmap_get(ctx->type_cache, t, ptr_hash, ptr_cmp);
+            if (cached) return cached;
+
             const char *struct_name = "anon_struct";
             if (t->as.struct_type.name && t->as.struct_type.name->key) {
                 struct_name = ((Slice*)t->as.struct_type.name->key)->ptr;
             }
             
-            // Check if it already exists in the module
-            LLVMTypeRef existing = LLVMGetTypeByName2(ctx->context, struct_name);
-            if (existing) {
-                return existing;
-            }
-
             // Create named struct (opaque first)
             LLVMTypeRef struct_ty = LLVMStructCreateNamed(ctx->context, struct_name);
+            
+            // Cache before resolving body to handle recursive types
+            hashmap_put(ctx->type_cache, (void*)t, struct_ty, ptr_hash, ptr_cmp);
 
             // Now resolve the body
             size_t field_count = t->as.struct_type.field_count;

@@ -35,4 +35,5 @@ TEST_CASE("Codegen: Loops") {
 #include "codegen_stress.inc"
 #include "more_codegen.inc"
 #include "deep_stress.inc"
+#include "abi_stress.inc"
 #undef CODEGEN_EXIT

@@ -634,7 +634,11 @@ AstNode *parse_type_atom(Parser *p, ParseError *err) {
     AstNode *type_node = new_node_or_err(p, AST_TYPE, err, "out of memory creating type node");
     if (!type_node) return NULL;
 
-    type_node->data.ast_type.kind = AST_TYPE_PRIMITIVE;
+    if (tok->type == TOK_IDENTIFIER) {
+        type_node->data.ast_type.kind = AST_TYPE_PRIMITIVE; // Note: Current AST structure uses AST_TYPE_PRIMITIVE for identifiers as well (as seen in AST dump), Sema resolves them.
+    } else {
+        type_node->data.ast_type.kind = AST_TYPE_PRIMITIVE;
+    }
     type_node->data.ast_type.span = tok->span;
     type_node->data.ast_type.u.base.intern_result = base_type;
     return type_node;
@@ -647,7 +651,8 @@ InternResult *get_base_type(Parser *p, ParseError *err) {
     if (!tok) { if (err) create_parse_error(err, p, "unexpected end of input while looking for base type", NULL); return NULL; }
 
     /* base types are contiguous in token enum between TOK_I32 and TOK_VOID, plus identifiers for structs */
-    if ((tok->type >= TOK_I32 && tok->type <= TOK_VOID) || tok->type == TOK_IDENTIFIER) {
+    /* Exclude TOK_STRUCT as it is not a base type by itself */
+    if (((tok->type >= TOK_I32 && tok->type <= TOK_VOID) && tok->type != TOK_STRUCT) || tok->type == TOK_IDENTIFIER) {
         consume(p, tok->type);
         return tok->record;
     }

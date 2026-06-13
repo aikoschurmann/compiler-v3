@@ -25,22 +25,33 @@ struct CodegenContext {
     LLVMContextRef context;
     LLVMModuleRef module;
     LLVMBuilderRef builder;
+    LLVMTargetDataRef target_data;
     HashMap *globals;
+    HashMap *type_cache;
     CodegenMap *locals;
     LLVMBasicBlockRef loop_cond_bb;
     LLVMBasicBlockRef loop_end_bb;
     int opt_level;
+    
+    // For sret
+    Type *current_func_type;
+    LLVMValueRef sret_ptr;
 };
 
 /* --- Internal Helpers --- */
 
-CodegenMap   *codegen_map_create(CodegenMap *parent);
+CodegenMap   *codegen_map_create(CodegenContext *ctx, CodegenMap *parent);
 void          codegen_map_destroy(CodegenMap *m);
 void          codegen_map_put(CodegenMap *m, void *key, LLVMValueRef val);
 LLVMValueRef  codegen_map_get(CodegenMap *m, void *key);
 
 LLVMTypeRef  get_llvm_type(CodegenContext *ctx, Type *t);
 LLVMTypeRef  get_llvm_function_type(CodegenContext *ctx, Type *t);
+bool         type_is_address_only(Type *t);
+bool         type_is_indirect(CodegenContext *ctx, Type *t);
+LLVMValueRef codegen_load_value(CodegenContext *ctx, LLVMValueRef ptr, Type *type);
+LLVMValueRef create_entry_block_alloca(CodegenContext *ctx, LLVMTypeRef ty, const char *name);
+size_t       struct_field_index(Type *struct_type, const char *field_name);
 LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr);
 LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr);
 

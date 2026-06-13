@@ -5,7 +5,7 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
         DynArray *stmts = expr->data.block.statements;
         LLVMValueRef last_val = NULL;
 
-        ctx->locals = codegen_map_create(ctx->locals);
+        ctx->locals = codegen_map_create(ctx, ctx->locals);
 
         for (size_t i = 0; i < stmts->count; i++) {
             AstNode *stmt = *(AstNode**)dynarray_get(stmts, i);
@@ -20,6 +20,9 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
     }
 
     if (expr->node_type == AST_RETURN_STATEMENT) {
+        Type *fn_type = ctx->current_func_type;
+        bool sret = type_is_indirect(ctx, fn_type->as.func.return_type);
+        
         if (expr->data.return_statement.expression) {
             LLVMValueRef retval = codegen_expr(ctx, expr->data.return_statement.expression);
             if (!retval) {
@@ -27,7 +30,12 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
                 if (LLVMGetTypeKind(ty) != LLVMVoidTypeKind)
                     retval = LLVMConstNull(ty);
             }
-            if (retval) return LLVMBuildRet(ctx->builder, retval);
+            if (sret) {
+                LLVMBuildStore(ctx->builder, retval, ctx->sret_ptr);
+                return LLVMBuildRetVoid(ctx->builder);
+            } else if (retval) {
+                return LLVMBuildRet(ctx->builder, retval);
+            }
         }
         return LLVMBuildRetVoid(ctx->builder);
     }
@@ -35,7 +43,7 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
     if (expr->node_type == AST_VARIABLE_DECLARATION) {
         AstVariableDeclaration *vdecl = &expr->data.variable_declaration;
         LLVMTypeRef  ty    = get_llvm_type(ctx, expr->type);
-        LLVMValueRef alloca = LLVMBuildAlloca(ctx->builder, ty, "var");
+        LLVMValueRef alloca = create_entry_block_alloca(ctx, ty, "var");
 
         if (vdecl->intern_result) {
             void *key = (void*)(intptr_t)vdecl->intern_result->entry->dense_index;
@@ -69,7 +77,7 @@ LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr) {
             if (all_const) {
                 res = LLVMConstArray(elem_ty, vals, count);
             } else {
-                LLVMValueRef alloca = LLVMBuildAlloca(ctx->builder, ty, "array_tmp");
+                LLVMValueRef alloca = create_entry_block_alloca(ctx, ty, "array_tmp");
                 for (size_t i = 0; i < count; i++) {
                     LLVMValueRef idxs[2] = {
                         LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 0, 0),
