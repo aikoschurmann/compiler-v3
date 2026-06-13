@@ -2,6 +2,7 @@
 
 LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
     if (!expr) return NULL;
+    if (!expr->type) ICE_AT(expr, "LValue node missing type.");
 
     if (expr->node_type == AST_IDENTIFIER) {
         AstIdentifier *ident = &expr->data.identifier;
@@ -17,15 +18,17 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
                 free(alloc_name);
             }
         }
+        if (!val) ICE_AT(expr, "Identifier '%s' could not be resolved to an lvalue.", ((Slice*)ident->intern_result->key)->ptr);
         return val;
     }
 
     if (expr->node_type == AST_SUBSCRIPT_EXPR) {
         AstSubscriptExpr *sub = &expr->data.subscript_expr;
         Type *target_type = sub->target->type;
+        if (!target_type) ICE_AT(sub->target, "Subscript target missing type.");
         LLVMValueRef idx = codegen_expr(ctx, sub->index);
 
-        if (target_type && target_type->kind == TYPE_ARRAY) {
+        if (target_type->kind == TYPE_ARRAY) {
             if (target_type->as.array.size_known) {
                 // target is a pointer to the array [N x T]*
                 LLVMValueRef target = codegen_lvalue(ctx, sub->target);
@@ -38,6 +41,7 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
             } else {
                 // Fat Pointer (Slice): target is a pointer to the struct {T*, i64}*
                 LLVMValueRef struct_ptr = codegen_lvalue(ctx, sub->target);
+                if (!struct_ptr) ICE_AT(sub->target, "Subscript target failed to resolve.");
                 LLVMTypeRef struct_ty = get_llvm_type(ctx, target_type);
                 
                 // 1. Extract the 'ptr' field (Index 0)
@@ -54,32 +58,31 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
             LLVMValueRef target = codegen_expr(ctx, sub->target);
             LLVMTypeRef elem_ty = NULL;
             
-            if (target_type && target_type->kind == TYPE_POINTER) {
+            if (target_type->kind == TYPE_POINTER) {
                 elem_ty = get_llvm_type(ctx, target_type->as.ptr.base);
-            } else if (target_type && target_type->kind == TYPE_PRIMITIVE && target_type->as.primitive == PRIM_STR) {
+            } else if (target_type->kind == TYPE_PRIMITIVE && target_type->as.primitive == PRIM_STR) {
                 elem_ty = LLVMInt8TypeInContext(ctx->context);
             } else {
-                elem_ty = LLVMInt32TypeInContext(ctx->context);
+                ICE_AT(sub->target, "Subscript target must be array, pointer, or string");
             }
             
-            return LLVMBuildGEP2(ctx->builder, elem_ty, target, &idx, 1, "arrayidx");
+            return LLVMBuildGEP2(ctx->builder, elem_ty, target, &idx, 1, "ptr_idx");
         }
     }
 
     if (expr->node_type == AST_MEMBER_EXPR) {
         AstMemberExpr *mem_expr = &expr->data.member_expr;
         Type *target_type = mem_expr->target->type;
+        if (!target_type) ICE_AT(mem_expr->target, "Member expression target missing type.");
 
         if (target_type->kind == TYPE_ARRAY) {
-             if (target_type->as.array.size_known) {
-                 return NULL;
+             if (!target_type->as.array.size_known) {
+                 LLVMValueRef target_lvalue = codegen_lvalue(ctx, mem_expr->target);
+                 if (!target_lvalue) ICE_AT(mem_expr->target, "Member expression target failed to resolve.");
+                 LLVMTypeRef struct_ty = get_llvm_type(ctx, target_type);
+                 // Index 1 for 'len'
+                 return LLVMBuildStructGEP2(ctx->builder, struct_ty, target_lvalue, 1, "len_gep");
              }
-             
-             LLVMValueRef target_lvalue = codegen_lvalue(ctx, mem_expr->target);
-             if (!target_lvalue) return NULL;
-             LLVMTypeRef struct_ty = get_llvm_type(ctx, target_type);
-             // Index 1 for 'len'
-             return LLVMBuildStructGEP2(ctx->builder, struct_ty, target_lvalue, 1, "len_gep");
         }
 
         Type *underlying = target_type;
@@ -87,7 +90,7 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
 
         if (underlying->kind == TYPE_STRUCT) {
             LLVMValueRef target_lvalue = codegen_lvalue(ctx, mem_expr->target);
-            if (!target_lvalue) return NULL;
+            if (!target_lvalue) ICE_AT(mem_expr->target, "Member expression target failed to resolve.");
 
             // If target was a pointer, we need to load it first to get the struct pointer
             if (target_type->kind == TYPE_POINTER) {
@@ -98,11 +101,12 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
             LLVMTypeRef struct_ty = get_llvm_type(ctx, underlying);
             return LLVMBuildStructGEP2(ctx->builder, struct_ty, target_lvalue, mem_expr->field_index, "field_gep");
         }
+        ICE_AT(expr, "Member access requires struct or slice");
     }
 
     if (expr->node_type == AST_UNARY_EXPR && expr->data.unary_expr.op == OP_DEREF) {
         return codegen_expr(ctx, expr->data.unary_expr.expr);
     }
 
-    return NULL;
+    ICE_AT(expr, "Unhandled lvalue node type %d", expr->node_type);
 }

@@ -169,9 +169,7 @@ LLVMValueRef codegen_expr_ops(CodegenContext *ctx, AstNode *expr) {
                 return LLVMBuildZExt(ctx->builder, res, get_llvm_type(ctx, expr->type), "bool_zext");
             }
             default: {
-                LLVMTypeRef ty = get_llvm_type(ctx, expr->type);
-                if (LLVMGetTypeKind(ty) != LLVMVoidTypeKind) return LLVMConstNull(ty);
-                return NULL;
+                ICE("codegen_expr_ops: unhandled binary operator %d", expr->data.binary_expr.op);
             }
         }
     }
@@ -215,7 +213,7 @@ LLVMValueRef codegen_expr_ops(CodegenContext *ctx, AstNode *expr) {
             return codegen_lvalue(ctx, ue->expr);
         } else if (ue->op == OP_DEREF) {
             LLVMValueRef ptr = codegen_expr(ctx, ue->expr);
-            return LLVMBuildLoad2(ctx->builder, get_llvm_type(ctx, expr->type), ptr, "loadtmp");
+            return codegen_load_value(ctx, ptr, expr->type);
         } else if (ue->op == OP_SUB) {
             LLVMValueRef val = codegen_expr(ctx, ue->expr);
             LLVMTypeRef  ty  = LLVMTypeOf(val);

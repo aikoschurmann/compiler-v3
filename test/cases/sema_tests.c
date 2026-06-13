@@ -11,7 +11,9 @@
 #define SEMA_ERROR(name, src, kind) \
     TEST_CASE("Sema/Error/" name) { ASSERT(test_check_sema_error(src, kind)); return 1; }
 #include "sema_errors.inc"
+#include "allocator_tests.inc"
 #undef SEMA_ERROR
+
 
 // 3. Shadowing Stress Cases (Mix of VALID and ERROR)
 #define SEMA_VALID(name, src) \

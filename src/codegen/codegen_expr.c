@@ -1,4 +1,5 @@
 #include "codegen_internal.h"
+#include "codegen/codegen_utils.h"
 
 // Forward declaration
 LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr);
@@ -37,8 +38,13 @@ LLVMValueRef codegen_expr_intrinsic(CodegenContext *ctx, AstNode *expr) {
             ICE("@alloc expected struct value for allocator, got %d", LLVMGetTypeKind(LLVMTypeOf(allocator_val)));
         }
         
-        LLVMValueRef ctx_val = LLVMBuildExtractValue(ctx->builder, allocator_val, 0, "ctx_val");
-        LLVMValueRef alloc_fn = LLVMBuildExtractValue(ctx->builder, allocator_val, 1, "alloc_fn_val");
+        // Use symbolic field indices
+        size_t ctx_idx = struct_field_index(allocator_arg->type, "ctx");
+        size_t alloc_idx = struct_field_index(allocator_arg->type, "alloc");
+        if (ctx_idx == (size_t)-1 || alloc_idx == (size_t)-1) ICE("@alloc allocator missing required fields");
+        
+        LLVMValueRef ctx_val = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)ctx_idx, "ctx_val");
+        LLVMValueRef alloc_fn = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)alloc_idx, "alloc_fn_val");
 
         // 4. CALL: Setup function type and invoke
         LLVMTypeRef alloc_fn_ty = LLVMFunctionType(i8ptr, (LLVMTypeRef[]){i8ptr, i64ty}, 2, 0);
@@ -61,8 +67,13 @@ LLVMValueRef codegen_expr_intrinsic(CodegenContext *ctx, AstNode *expr) {
             ICE("@free expected struct value for allocator, got %d", LLVMGetTypeKind(LLVMTypeOf(allocator_val)));
         }
         
-        LLVMValueRef ctx_val = LLVMBuildExtractValue(ctx->builder, allocator_val, 0, "ctx_val");
-        LLVMValueRef free_fn = LLVMBuildExtractValue(ctx->builder, allocator_val, 2, "free_fn_val");
+        // Use symbolic field indices
+        size_t ctx_idx = struct_field_index(allocator_arg->type, "ctx");
+        size_t free_idx = struct_field_index(allocator_arg->type, "free");
+        if (ctx_idx == (size_t)-1 || free_idx == (size_t)-1) ICE("@free allocator missing required fields");
+        
+        LLVMValueRef ctx_val = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)ctx_idx, "ctx_val");
+        LLVMValueRef free_fn = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)free_idx, "free_fn_val");
 
         LLVMValueRef void_ptr = LLVMBuildBitCast(ctx->builder, ptr_val, i8ptr, "void_ptr");
         LLVMTypeRef free_fn_ty = LLVMFunctionType(LLVMVoidTypeInContext(ctx->context), (LLVMTypeRef[]){i8ptr, i8ptr}, 2, 0);
@@ -100,18 +111,10 @@ LLVMValueRef codegen_expr_literal(CodegenContext *ctx, AstNode *expr) {
 }
 
 LLVMValueRef codegen_expr_ident(CodegenContext *ctx, AstNode *expr) {
-    if (!expr->type) ICE("Identifier '%s' missing type.", ((Slice*)expr->data.identifier.intern_result->key)->ptr);
+    if (!expr->type) ICE_AT(expr, "Identifier '%s' missing type.", ((Slice*)expr->data.identifier.intern_result->key)->ptr);
     
     LLVMValueRef ptr = codegen_lvalue(ctx, expr);
-    if (!ptr) return NULL;
-    
-    if (LLVMGetTypeKind(LLVMTypeOf(ptr)) == LLVMFunctionTypeKind || (expr->type && expr->type->kind == TYPE_FUNCTION)) return ptr;
-    
-    LLVMTypeRef ty = get_llvm_type(ctx, expr->type);
-    if (LLVMGetTypeKind(ty) == LLVMVoidTypeKind) return ptr;
-    if (expr->type && expr->type->kind == TYPE_ARRAY && expr->type->as.array.size_known) return ptr;
-    
-    return LLVMBuildLoad2(ctx->builder, ty, ptr, "loadtmp");
+    return codegen_load_value(ctx, ptr, expr->type);
 }
 
 LLVMValueRef codegen_expr_member(CodegenContext *ctx, AstNode *expr) {
@@ -124,17 +127,17 @@ LLVMValueRef codegen_expr_member(CodegenContext *ctx, AstNode *expr) {
     if (target_type->kind == TYPE_ARRAY && target_type->as.array.size_known) return LLVMConstInt(LLVMInt64TypeInContext(ctx->context), target_type->as.array.size, 0);
     
     LLVMValueRef target_lvalue = codegen_lvalue(ctx, mem_expr->target);
-    if (!target_lvalue) return NULL;
-    if (target_type->kind == TYPE_POINTER) target_lvalue = LLVMBuildLoad2(ctx->builder, get_llvm_type(ctx, target_type), target_lvalue, "deref_ptr");
+    
+    // If target was a pointer, we need to load it first to get the struct pointer
+    if (target_type->kind == TYPE_POINTER) {
+        LLVMTypeRef ptr_ty = get_llvm_type(ctx, target_type);
+        target_lvalue = LLVMBuildLoad2(ctx->builder, ptr_ty, target_lvalue, "deref_ptr");
+    }
 
     Type *underlying = target_type->kind == TYPE_POINTER ? target_type->as.ptr.base : target_type;
     LLVMValueRef field_ptr = LLVMBuildStructGEP2(ctx->builder, get_llvm_type(ctx, underlying), target_lvalue, mem_expr->field_index, "field_gep");
     
-    // Arrays must not be loaded; we work with their addresses to allow decay/indexing
-    if (expr->type && expr->type->kind == TYPE_ARRAY && expr->type->as.array.size_known) return field_ptr;
-
-    LLVMTypeRef field_ty = get_llvm_type(ctx, expr->type);
-    return LLVMGetTypeKind(field_ty) == LLVMVoidTypeKind ? field_ptr : LLVMBuildLoad2(ctx->builder, field_ty, field_ptr, "field_val");
+    return codegen_load_value(ctx, field_ptr, expr->type);
 }
 
 LLVMValueRef codegen_expr_struct_literal(CodegenContext *ctx, AstNode *expr) {
@@ -174,7 +177,7 @@ LLVMValueRef codegen_const_value(CodegenContext *ctx, Type *type, ConstValue *va
         free(str);
         return gstr;
     }
-    return LLVMConstNull(ty);
+    ICE("codegen_const_value: unrecognized constant type %d", val->type);
 }
 
 LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr) {
@@ -195,9 +198,7 @@ LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr) {
         case AST_SUBSCRIPT_EXPR: {
             LLVMValueRef ptr = codegen_lvalue(ctx, expr);
             if (!ptr) return NULL;
-            if (!expr->type) ICE("Subscript expression missing type.");
-            LLVMTypeRef ty = get_llvm_type(ctx, expr->type);
-            return (expr->type && expr->type->kind == TYPE_ARRAY) ? (expr->type->as.array.size_known ? ptr : LLVMBuildLoad2(ctx->builder, ty, ptr, "slice_load")) : LLVMBuildLoad2(ctx->builder, ty, ptr, "loadtmp");
+            return codegen_load_value(ctx, ptr, expr->type);
         }
         case AST_CALL_EXPR:        return codegen_expr_call(ctx, expr);
         case AST_INTRINSIC:        return codegen_expr_intrinsic(ctx, expr);
