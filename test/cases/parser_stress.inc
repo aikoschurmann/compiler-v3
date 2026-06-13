@@ -1,0 +1,5 @@
+PARSE_VALID("empty_file", "")
+PARSE_VALID("deep_blocks", "fn main() { {{{{{{}}}}}} }")
+PARSE_VALID("trailing_comma_init", "fn main() { arr: i32[2] = {1, 2,}; }")
+PARSE_VALID("trailing_comma_args", "fn f(a: i32, b: i32,) {} fn main() { f(1, 2,); }")
+PARSE_VALID("empty_struct", "struct E {}")

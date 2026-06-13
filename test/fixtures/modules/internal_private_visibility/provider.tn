@@ -1,0 +1,8 @@
+fn private_helper() -> i32 {
+    return 42;
+}
+
+pub fn public_api() -> i32 {
+    // This call should be allowed because it's in the same module
+    return private_helper();
+}

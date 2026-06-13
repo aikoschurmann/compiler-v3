@@ -1,0 +1,5 @@
+import a;
+import b;
+fn main() -> i32 {
+    return a_func() + b_func();
+}

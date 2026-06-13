@@ -1,0 +1,5 @@
+import provider;
+fn main() -> i32 {
+    d: Data = Data { x: SECRET };
+    return get_val() + d.x;
+}

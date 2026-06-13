@@ -1,0 +1,3 @@
+fn private_fn() -> i32 { return 0; }
+struct PrivateStruct { x: i32; }
+const PRIVATE_CONST: i32 = 0;

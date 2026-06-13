@@ -1,0 +1,5 @@
+import mid_a;
+import mid_b;
+fn main() -> i32 {
+    return a_val() + b_val();
+}

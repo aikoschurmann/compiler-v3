@@ -1,0 +1,9 @@
+import provider;
+
+fn main() -> i32 {
+    // These should all fail (non-pub)
+    a: PrivateStruct;
+    x: i32 = PRIVATE_CONST;
+    y: i32 = private_fn();
+    return x + y;
+}

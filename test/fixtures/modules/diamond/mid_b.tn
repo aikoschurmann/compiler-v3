@@ -1,0 +1,2 @@
+import base;
+pub fn b_val() -> i32 { return base_val() + 2; }

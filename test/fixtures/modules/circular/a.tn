@@ -1,0 +1,2 @@
+import b;
+pub fn a_func() -> i32 { return 1; }

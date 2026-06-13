@@ -1,0 +1,5 @@
+import helper;
+
+fn main() -> i32 {
+    return get_value();
+}

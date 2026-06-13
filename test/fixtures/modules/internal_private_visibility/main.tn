@@ -1,0 +1,5 @@
+import provider;
+
+fn main() -> i32 {
+    return public_api();
+}

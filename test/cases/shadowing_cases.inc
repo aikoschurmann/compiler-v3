@@ -1,0 +1,6 @@
+SEMA_VALID("param_shadow_global", "val: i32 = 10; fn f(val: i32) -> i32 { return val; } fn main() {}")
+SEMA_VALID("block_shadow_param", "fn f(x: i32) -> i32 { { x: i32 = 20; return x; } return x; } fn main() {}")
+SEMA_ERROR("type_shadowed_by_var", "struct S { x: i32; } fn main() { S: i32 = 10; val: S = S{x: 1}; }", TE_UNKNOWN_TYPE)
+SEMA_ERROR("fn_shadowed_by_var", "fn f() {} fn main() { f: i32 = 10; f(); }", TE_NOT_CALLABLE)
+SEMA_VALID("field_same_as_var", "struct S { x: i32; } fn main() { x: i32 = 10; s: S = S{x: 20}; }")
+SEMA_VALID("global_shadow_global", "x: i32 = 10; fn main() { x: i32 = 20; }")
