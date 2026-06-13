@@ -1,0 +1,2 @@
+pub struct Collision { x: i32; y: i32; }
+pub fn get_b() -> Collision { return Collision { x: 2, y: 3 }; }

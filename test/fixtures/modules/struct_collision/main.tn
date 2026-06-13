@@ -1,0 +1,9 @@
+import mod_a;
+import mod_b;
+
+fn main() -> i32 {
+
+    mod_a.get_a();
+    mod_b.get_b();
+    return 0;
+}

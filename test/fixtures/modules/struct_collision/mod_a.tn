@@ -1,0 +1,2 @@
+pub struct Collision { x: i32; }
+pub fn get_a() -> Collision { return Collision { x: 1 }; }
