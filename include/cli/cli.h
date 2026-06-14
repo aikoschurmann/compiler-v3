@@ -13,6 +13,7 @@ typedef struct {
     bool quiet;
     int opt_level;
     const char *output_name;
+    const char *stdlib_path;
 } Options;
 
 int parse_options(int argc, char **argv, Options *opts, const char **in_path);

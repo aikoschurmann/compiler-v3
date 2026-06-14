@@ -1,5 +1,5 @@
-import a;
-import b;
+import .a { a_func };
+import .b { b_func };
 fn main() -> i32 {
     return a_func() + b_func();
 }

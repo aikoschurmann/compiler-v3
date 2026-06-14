@@ -132,12 +132,6 @@ InternResult* intern_peek(DenseArenaInterner *interner, Slice *slice)
     return hashmap_get(interner->hashmap, slice, interner->hash_func, interner->cmp_func);
 }
 
-/* Return dense index for slice, or -1 on error. DEPRECATED - use intern_idx instead */
-int intern_or_get_idx(DenseArenaInterner *I, Slice *s, void *meta) {
-    if (!I || !s) return -1;
-    return intern_idx(I, s, meta);
-}
-
 /* Return canonical C string for a dense index (for printing). Returns NULL for invalid idx. */
 const char *interner_get_cstr(DenseArenaInterner *I, int idx) {
     // Sanity checks

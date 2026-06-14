@@ -1,0 +1,7 @@
+import std.libc;
+
+pub struct Allocator {
+    ctx: *void;
+    alloc: fn(*void, i64) -> *void;
+    free: fn(*void, *void) -> void;
+}

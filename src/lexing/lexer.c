@@ -37,6 +37,7 @@ static const struct {
     {"const", TOK_CONST},
     {"pub", TOK_PUB},
     {"import", TOK_IMPORT},
+    {"alias", TOK_ALIAS},
     {"struct", TOK_STRUCT},
     {"as", TOK_AS},
     {"i32", TOK_I32},
@@ -583,6 +584,7 @@ const char* token_type_to_string(TokenType type) {
         case TOK_CONST: return "CONST";
         case TOK_PUB: return "PUB";
         case TOK_IMPORT: return "IMPORT";
+        case TOK_ALIAS: return "ALIAS";
         case TOK_STRUCT: return "STRUCT";
         case TOK_I32: return "I32";
         case TOK_I64: return "I64";

@@ -12,7 +12,7 @@ LLVM_LDFLAGS := $(shell $(LLVM_CONFIG) --ldflags --libs core analysis bitwriter 
 
 # Base flags
 CFLAGS_BASE := -Iinclude -Iinclude/cli -Iinclude/core -Iinclude/codegen -Iinclude/datastructures -Iinclude/lexing -Iinclude/parsing -Iinclude/sema -Iinclude/types $(LLVM_CFLAGS) -MMD -MP -g
-LDFLAGS_BASE := -lm $(LLVM_LDFLAGS)
+LDFLAGS_BASE := -lm $(LLVM_LDFLAGS) -rdynamic
 
 # Release flags
 CFLAGS_RELEASE := $(CFLAGS_BASE) -O3

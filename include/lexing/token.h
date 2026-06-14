@@ -22,6 +22,7 @@ typedef enum {
     TOK_CONST,
     TOK_PUB,
     TOK_IMPORT,
+    TOK_ALIAS,
     TOK_DEFER,
 
     // types

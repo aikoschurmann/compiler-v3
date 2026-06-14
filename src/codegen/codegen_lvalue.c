@@ -6,20 +6,32 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
 
     if (expr->node_type == AST_IDENTIFIER) {
         AstIdentifier *ident = &expr->data.identifier;
-        LLVMValueRef val = NULL;
+        
+        // 1. Try local variables first
         if (ident->intern_result) {
             void *key = (void*)(intptr_t)ident->intern_result->entry->dense_index;
-            val = codegen_map_get(ctx->locals, key);
-            if (!val) val = hashmap_get(ctx->globals, key, ptr_hash, ptr_cmp);
-            if (!val) {
-                Slice *s = (Slice*)ident->intern_result->key;
-                char *alloc_name = strndup(s->ptr, s->len);
-                val = LLVMGetNamedFunction(ctx->module, alloc_name);
-                free(alloc_name);
+            LLVMValueRef val = codegen_map_get(ctx->locals, key);
+            if (val) return val;
+        }
+
+        // 2. Try global/mangled symbols
+        CompilationUnit *current_unit = module_loader_get_unit(ctx->loader, expr->filename);
+        if (current_unit && current_unit->global_scope) {
+            Symbol *sym = scope_lookup_symbol(current_unit->global_scope, ident->intern_result, expr->filename);
+            if (sym) {
+                CompilationUnit *origin_unit = module_loader_get_unit(ctx->loader, sym->filename);
+                char *mangled = mangle_name(ctx, origin_unit, ident->intern_result);
+                
+                LLVMValueRef val = LLVMGetNamedFunction(ctx->module, mangled);
+                if (!val) val = LLVMGetNamedGlobal(ctx->module, mangled);
+                
+                free(mangled);
+                if (val) return val;
             }
         }
-        if (!val) ICE_AT(expr, "Identifier '%s' could not be resolved to an lvalue.", ((Slice*)ident->intern_result->key)->ptr);
-        return val;
+
+        ICE_AT(expr, "Identifier '%s' could not be resolved to an lvalue.", ((Slice*)ident->intern_result->key)->ptr);
+        return NULL;
     }
 
     if (expr->node_type == AST_SUBSCRIPT_EXPR) {
@@ -72,6 +84,22 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
 
     if (expr->node_type == AST_MEMBER_EXPR) {
         AstMemberExpr *mem_expr = &expr->data.member_expr;
+        
+        // Module access handling
+        if (mem_expr->symbol) {
+            CompilationUnit *u = module_loader_get_unit(ctx->loader, mem_expr->symbol->filename);
+            if (!u) ICE("Failed to find CompilationUnit for symbol in '%s'", mem_expr->symbol->filename ? mem_expr->symbol->filename : "unknown");
+            
+            char *mangled = mangle_name(ctx, u, mem_expr->member);
+            LLVMValueRef val = LLVMGetNamedFunction(ctx->module, mangled);
+            if (!val) val = LLVMGetNamedGlobal(ctx->module, mangled);
+            
+            if (!val) ICE("Failed to find LLVM value for mangled symbol '%s'", mangled);
+            
+            free(mangled);
+            return val;
+        }
+
         Type *target_type = mem_expr->target->type;
         if (!target_type) ICE_AT(mem_expr->target, "Member expression target missing type.");
 

@@ -84,7 +84,7 @@ LLVMValueRef codegen_expr_intrinsic(CodegenContext *ctx, AstNode *expr) {
 }
 
 LLVMValueRef codegen_expr_literal(CodegenContext *ctx, AstNode *expr) {
-    if (!expr->type) ICE("Literal node missing type.");
+    if (!expr->type) ICE_AT(expr, "Literal node missing type.");
     LLVMTypeRef ty = get_llvm_type(ctx, expr->type);
     
     if (expr->data.literal.type == INT_LITERAL) {
@@ -111,46 +111,119 @@ LLVMValueRef codegen_expr_literal(CodegenContext *ctx, AstNode *expr) {
 }
 
 LLVMValueRef codegen_expr_ident(CodegenContext *ctx, AstNode *expr) {
-    if (!expr->type) ICE_AT(expr, "Identifier '%s' missing type.", ((Slice*)expr->data.identifier.intern_result->key)->ptr);
+    if (!expr->type) ICE_AT(expr, "Identifier missing type.");
     
     LLVMValueRef ptr = codegen_lvalue(ctx, expr);
     return codegen_load_value(ctx, ptr, expr->type);
 }
 
 LLVMValueRef codegen_expr_member(CodegenContext *ctx, AstNode *expr) {
-    if (!expr->type) ICE("Member expression missing type.");
-    
-    AstMemberExpr *mem_expr = &expr->data.member_expr;
-    Type *target_type = mem_expr->target->type;
-    if (!target_type) ICE("Member expression target missing type.");
+    if (!expr->type) ICE_AT(expr, "Member expression missing type.");
 
-    if (target_type->kind == TYPE_ARRAY && target_type->as.array.size_known) return LLVMConstInt(LLVMInt64TypeInContext(ctx->context), target_type->as.array.size, 0);
-    
-    LLVMValueRef target_lvalue = codegen_lvalue(ctx, mem_expr->target);
-    
-    // If target was a pointer, we need to load it first to get the struct pointer
-    if (target_type->kind == TYPE_POINTER) {
-        LLVMTypeRef ptr_ty = get_llvm_type(ctx, target_type);
-        target_lvalue = LLVMBuildLoad2(ctx->builder, ptr_ty, target_lvalue, "deref_ptr");
-    }
+    // Use unified lvalue-then-load pattern
+    LLVMValueRef ptr = codegen_lvalue(ctx, expr);
+    if (!ptr) return NULL;
 
-    Type *underlying = target_type->kind == TYPE_POINTER ? target_type->as.ptr.base : target_type;
-    LLVMValueRef field_ptr = LLVMBuildStructGEP2(ctx->builder, get_llvm_type(ctx, underlying), target_lvalue, mem_expr->field_index, "field_gep");
-    
-    return codegen_load_value(ctx, field_ptr, expr->type);
+    return codegen_load_value(ctx, ptr, expr->type);
 }
 
 LLVMValueRef codegen_expr_struct_literal(CodegenContext *ctx, AstNode *expr) {
-    if (!expr->type) ICE("Struct literal missing type.");
-    
+    if (!expr->type) ICE_AT(expr, "Struct literal missing type.");
+
     AstStructLiteral *lit = &expr->data.struct_literal;
     LLVMTypeRef struct_ty = get_llvm_type(ctx, expr->type);
-    LLVMValueRef alloca = LLVMBuildAlloca(ctx->builder, struct_ty, "struct_lit");
-    for (size_t i = 0; i < (lit->fields ? lit->fields->count : 0); i++) {
+
+    size_t count = lit->fields ? lit->fields->count : 0;
+    bool all_const = true;
+    LLVMValueRef *vals = count > 0 ? malloc(sizeof(LLVMValueRef) * count) : NULL;
+
+    for (size_t i = 0; i < count; i++) {
         AstFieldInit *init = (AstFieldInit*)dynarray_get(lit->fields, i);
-        LLVMBuildStore(ctx->builder, codegen_expr(ctx, init->expr), LLVMBuildStructGEP2(ctx->builder, struct_ty, alloca, (unsigned int)init->field_index, "field_ptr"));
+        vals[i] = codegen_expr(ctx, init->expr);
+        
+        LLVMTypeRef field_ty = get_llvm_type(ctx, expr->type->as.struct_type.fields[init->field_index].type);
+        if (vals[i] && LLVMTypeOf(vals[i]) != field_ty) {
+            if (LLVMIsAConstant(vals[i])) {
+                vals[i] = LLVMConstBitCast(vals[i], field_ty);
+            } else {
+                vals[i] = LLVMBuildBitCast(ctx->builder, vals[i], field_ty, "struct_bitcast");
+            }
+        }
+
+        if (!vals[i] || !LLVMIsAConstant(vals[i])) {
+            all_const = false;
+        }
     }
+
+    if (all_const && count > 0) {
+        size_t total_fields = expr->type->as.struct_type.field_count;
+        LLVMValueRef *ordered_vals = malloc(sizeof(LLVMValueRef) * total_fields);
+
+        // Initialize with null/undef constants
+        for(size_t i=0; i < total_fields; i++) {
+            ordered_vals[i] = LLVMConstNull(get_llvm_type(ctx, expr->type->as.struct_type.fields[i].type));
+        }
+
+        for (size_t i = 0; i < count; i++) {
+            AstFieldInit *init = (AstFieldInit*)dynarray_get(lit->fields, i);
+            ordered_vals[init->field_index] = vals[i];
+        }
+
+        LLVMValueRef res = LLVMConstNamedStruct(struct_ty, ordered_vals, (unsigned int)total_fields);
+        free(vals);
+        free(ordered_vals);
+        return res;
+    }
+
+    // Fallback to dynamic version
+    LLVMValueRef alloca = create_entry_block_alloca(ctx, struct_ty, "struct_lit");
+    for (size_t i = 0; i < count; i++) {
+        AstFieldInit *init = (AstFieldInit*)dynarray_get(lit->fields, i);
+        LLVMBuildStore(ctx->builder, vals[i], LLVMBuildStructGEP2(ctx->builder, struct_ty, alloca, (unsigned int)init->field_index, "field_ptr"));
+    }
+    if (vals) free(vals);
     return LLVMBuildLoad2(ctx->builder, struct_ty, alloca, "struct_val");
+}
+
+LLVMValueRef codegen_expr_initializer_list(CodegenContext *ctx, AstNode *expr) {
+    if (!expr->type) ICE_AT(expr, "Initializer list missing type.");
+
+    AstInitializeList *init  = &expr->data.initializer_list;
+    size_t             count = init->elements->count;
+    LLVMValueRef *vals = malloc(sizeof(LLVMValueRef) * count);
+    bool all_const = true;
+
+    for (size_t i = 0; i < count; i++) {
+        vals[i] = codegen_expr(ctx, *(AstNode**)dynarray_get(init->elements, i));
+        if (!vals[i] || !LLVMIsAConstant(vals[i])) {
+            all_const = false;
+        }
+    }
+
+    LLVMTypeRef  ty  = get_llvm_type(ctx, expr->type);
+    LLVMValueRef res = NULL;
+
+    if (LLVMGetTypeKind(ty) == LLVMArrayTypeKind) {
+        LLVMTypeRef elem_ty = LLVMGetElementType(ty);
+        if (all_const) {
+            res = LLVMConstArray(elem_ty, vals, count);
+        } else {
+            LLVMValueRef alloca = create_entry_block_alloca(ctx, ty, "array_tmp");
+            for (size_t i = 0; i < count; i++) {
+                LLVMValueRef idxs[2] = {
+                    LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 0, 0),
+                    LLVMConstInt(LLVMInt32TypeInContext(ctx->context), (unsigned long long)i, 0)
+                };
+                LLVMValueRef gep = LLVMBuildGEP2(ctx->builder, ty, alloca, idxs, 2, "elem_ptr");
+                if (vals[i]) {
+                    LLVMBuildStore(ctx->builder, vals[i], gep);
+                }
+            }
+            res = LLVMBuildLoad2(ctx->builder, ty, alloca, "array_val");
+        }
+    }
+    free(vals);
+    return res;
 }
 
 LLVMValueRef codegen_const_value(CodegenContext *ctx, Type *type, ConstValue *val) {
@@ -183,11 +256,17 @@ LLVMValueRef codegen_const_value(CodegenContext *ctx, Type *type, ConstValue *va
 LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr) {
     if (!expr) return NULL;
     
-    // If we have a constant value from semantic analysis, use it.
-    // However, string literals still need LLVMBuildGlobalStringPtr which requires a builder.
-    // For global initializers, we might need a different approach for strings.
+    // Strict contract check: only value-producing nodes should be here.
+    // Statements should be handled by codegen_statement.
+    if (!expr->type) {
+        codegen_statement(ctx, expr);
+        return NULL;
+    }
+
     if (expr->is_const_expr && expr->const_value.type != STRING_LITERAL) {
-        return codegen_const_value(ctx, expr->type, &expr->const_value);
+        if (expr->type && (expr->type->kind == TYPE_PRIMITIVE || expr->type->kind == TYPE_POINTER)) {
+            return codegen_const_value(ctx, expr->type, &expr->const_value);
+        }
     }
 
     switch (expr->node_type) {
@@ -203,12 +282,22 @@ LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr) {
         case AST_CALL_EXPR:        return codegen_expr_call(ctx, expr);
         case AST_INTRINSIC:        return codegen_expr_intrinsic(ctx, expr);
         case AST_BINARY_EXPR: case AST_UNARY_EXPR: case AST_CAST: case AST_ASSIGNMENT_EXPR: return codegen_expr_ops(ctx, expr);
-        case AST_IF_STATEMENT: case AST_WHILE_STATEMENT: case AST_FOR_STATEMENT: case AST_BREAK_STATEMENT: case AST_CONTINUE_STATEMENT: return codegen_expr_flow(ctx, expr);
-        case AST_BLOCK: case AST_RETURN_STATEMENT: case AST_VARIABLE_DECLARATION: case AST_INITIALIZER_LIST: case AST_EXPR_STATEMENT: return codegen_expr_stmt(ctx, expr);
-        case AST_DEFER_STATEMENT: {
-            dynarray_push_value(ctx->deferred_actions, &expr->data.defer_statement.body);
+        case AST_INITIALIZER_LIST: return codegen_expr_initializer_list(ctx, expr);
+        
+        // Control flow and statements that don't produce values
+        case AST_IF_STATEMENT:
+        case AST_WHILE_STATEMENT:
+        case AST_FOR_STATEMENT:
+        case AST_BREAK_STATEMENT:
+        case AST_CONTINUE_STATEMENT:
+        case AST_BLOCK:
+        case AST_RETURN_STATEMENT:
+        case AST_VARIABLE_DECLARATION:
+        case AST_EXPR_STATEMENT:
+        case AST_DEFER_STATEMENT:
+            codegen_statement(ctx, expr);
             return NULL;
-        }
+
         default: {
             ICE("Node type %d missing codegen implementation.", expr->node_type);
             return NULL;

@@ -20,6 +20,7 @@ int parse_options(int argc, char **argv, Options *opts, const char **in_path) {
     opts->quiet = false;
     opts->output_name = "output";
     opts->opt_level = 0;
+    opts->stdlib_path = "lib";
 
     int pos_args = 0;
 

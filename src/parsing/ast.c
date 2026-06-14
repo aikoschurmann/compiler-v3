@@ -116,6 +116,7 @@ AstNode *ast_create_node(AstNodeType type, Arena *arena, const char *filename) {
 
     node->node_type = type;
     node->filename = filename;
+    node->flags = AST_FLAG_NONE;
     /* arena_calloc zeroed the rest (span fields = 0, union memory = 0,
        is_const_expr = 0, const_value = zero). */
     return node;
@@ -313,15 +314,51 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             break;
 
         case AST_IMPORT_DECLARATION:
-            print_tree_prefix(depth + 1, 1);
+            print_tree_prefix(depth + 1, 0);
             printf("module: ");
-            if (node->data.import_declaration.module_name && identifiers) {
-                const char *name = interner_get_cstr(identifiers, node->data.import_declaration.module_name->entry->dense_index);
-                printf("'%s'", name ? name : "?");
+            if (node->data.import_declaration.module_path && node->data.import_declaration.module_path->count > 0) {
+                for (size_t i = 0; i < node->data.import_declaration.module_path->count; ++i) {
+                    InternResult *part = *(InternResult**)dynarray_get(node->data.import_declaration.module_path, i);
+                    if (identifiers) {
+                        const char *name = interner_get_cstr(identifiers, part->entry->dense_index);
+                        printf("%s", name ? name : "?");
+                    } else {
+                        printf("?");
+                    }
+                    if (i < node->data.import_declaration.module_path->count - 1) printf(".");
+                }
             } else {
                 printf("(unknown)");
             }
             printf("\n");
+
+            if (node->data.import_declaration.module_alias) {
+                print_tree_prefix(depth + 1, node->data.import_declaration.specific_symbols ? 0 : 1);
+                printf("alias: ");
+                if (identifiers) {
+                    const char *alias = interner_get_cstr(identifiers, node->data.import_declaration.module_alias->entry->dense_index);
+                    printf("'%s'", alias ? alias : "?");
+                }
+                printf("\n");
+            }
+
+            if (node->data.import_declaration.specific_symbols && node->data.import_declaration.specific_symbols->count > 0) {
+                print_tree_prefix(depth + 1, 1);
+                printf("symbols:\n");
+                for (size_t i = 0; i < node->data.import_declaration.specific_symbols->count; ++i) {
+                    ImportSymbol *sym = *(ImportSymbol**)dynarray_get(node->data.import_declaration.specific_symbols, i);
+                    print_tree_prefix(depth + 2, i == node->data.import_declaration.specific_symbols->count - 1);
+                    if (sym->original_name && identifiers) {
+                        const char *orig = interner_get_cstr(identifiers, sym->original_name->entry->dense_index);
+                        printf("%s", orig ? orig : "?");
+                    }
+                    if (sym->alias_name && identifiers) {
+                        const char *alias = interner_get_cstr(identifiers, sym->alias_name->entry->dense_index);
+                        printf(" alias %s", alias ? alias : "?");
+                    }
+                    printf("\n");
+                }
+            }
             break;
             
         case AST_INTRINSIC:
@@ -379,15 +416,12 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
 
         case AST_STRUCT_LITERAL: {
             print_tree_prefix(depth + 1, 0);
-            printf("name: ");
-            if (node->data.struct_literal.intern_result &&
-                node->data.struct_literal.intern_result->entry && identifiers) {
-                const char *name = interner_get_cstr(identifiers, node->data.struct_literal.intern_result->entry->dense_index);
-                printf("'%s'", name ? name : "?");
+            printf("type:\n");
+            if (node->data.struct_literal.type_node) {
+                print_ast_with_prefix(node->data.struct_literal.type_node, depth + 2, 1, keywords, identifiers, strings);
             } else {
-                printf("(none)");
+                printf("(none)\n");
             }
-            printf("\n");
 
             if (node->data.struct_literal.fields && node->data.struct_literal.fields->count > 0) {
                 print_tree_prefix(depth + 1, 1);

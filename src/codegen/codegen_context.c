@@ -26,18 +26,48 @@ LLVMValueRef codegen_map_get(CodegenMap *m, void *key) {
     }
     return NULL;
 }
-
-CodegenContext* codegen_context_create(AstNode *program, TypeStore *store, const char *module_name, int opt_level) {
+CodegenContext* codegen_context_create(TypeStore *store, const char *module_name, int opt_level, ModuleLoader *loader) {
     CodegenContext *ctx = malloc(sizeof(CodegenContext));
-    ctx->program = program;
     ctx->store = store;
     ctx->context = LLVMContextCreate();
     ctx->module = LLVMModuleCreateWithNameInContext(module_name, ctx->context);
     ctx->builder = LLVMCreateBuilderInContext(ctx->context);
+    ctx->loader = loader;
 
-    // Set up target data for ABI
+    // 1. Initialize Target
     LLVMInitializeNativeTarget();
-    ctx->target_data = LLVMCreateTargetData(LLVMGetDataLayoutStr(ctx->module));
+    LLVMInitializeNativeAsmPrinter();
+
+    char *target_triple = LLVMGetDefaultTargetTriple();
+    LLVMSetTarget(ctx->module, target_triple);
+
+    char *error = NULL;
+    if (LLVMGetTargetFromTriple(target_triple, &ctx->target, &error) != 0) {
+        char err_msg[256];
+        snprintf(err_msg, sizeof(err_msg), "%s", error);
+        LLVMDisposeMessage(error);
+        ICE("LLVMGetTargetFromTriple failed: %s", err_msg);
+    }
+
+    // 2. Initialize Machine with Host CPU
+    char *cpu = LLVMGetHostCPUName();
+    char *features = LLVMGetHostCPUFeatures();
+
+    ctx->machine = LLVMCreateTargetMachine(
+        ctx->target, target_triple, cpu, features,
+        LLVMCodeGenLevelAggressive, LLVMRelocDefault, LLVMCodeModelDefault
+    );
+
+    LLVMDisposeMessage(target_triple);
+    LLVMDisposeMessage(cpu);
+    LLVMDisposeMessage(features);
+
+    if (!ctx->machine) {
+        ICE("Failed to create LLVMTargetMachine");
+    }
+
+    // 3. Setup Target Data
+    ctx->target_data = LLVMCreateTargetDataLayout(ctx->machine);
     LLVMSetModuleDataLayout(ctx->module, ctx->target_data);
 
     ctx->globals = hashmap_create(1024);
@@ -60,6 +90,7 @@ void codegen_context_destroy(CodegenContext *ctx) {
     dynarray_free(ctx->deferred_actions);
     free(ctx->deferred_actions);
     LLVMDisposeTargetData(ctx->target_data);
+    LLVMDisposeTargetMachine(ctx->machine);
     while (ctx->locals) {
         CodegenMap *parent = ctx->locals->parent;
         codegen_map_destroy(ctx->locals);

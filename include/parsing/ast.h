@@ -10,7 +10,8 @@
 
 /* ----------------------- Forward Declarations ----------------------- */
 typedef struct AstNode AstNode;
-typedef struct Type Type; /* Moved up to fix "unknown type name" error */
+typedef struct Type Type; 
+typedef struct Symbol Symbol;
 
 /* ----------------------- AST node kinds ----------------------- */
 
@@ -23,6 +24,7 @@ typedef enum {
     AST_PARAM,
     AST_STRUCT_DECLARATION,
     AST_IMPORT_DECLARATION,
+    AST_ALIAS_DECLARATION,
     AST_INTRINSIC,
 
     /* statements */
@@ -123,8 +125,25 @@ typedef struct {
 } AstFieldDecl;
 
 typedef struct {
-    InternResult *module_name;   /* interned module path, e.g. "std.memory" */
+    InternResult *original_name;
+    InternResult *alias_name; 
+} ImportSymbol;
+
+typedef struct {
+    DynArray *module_path;       /* array of InternResult* for dotted path: [std, io] */
+    InternResult *module_alias;  /* optional: alias name for the module */
+    DynArray *specific_symbols;  /* optional: array of ImportSymbol* */
+    int leading_dots;            /* 0 = absolute, 1 = ./, 2 = ../ */
+    bool is_root_relative;       /* starts with @ */
+    bool is_star;                /* ends with .* */
+    bool is_pub;                 /* re-export */
+    char *resolved_logical_path; /* populated by module_loader */
 } AstImportDeclaration;
+
+typedef struct {
+    InternResult *alias_name;
+    AstNode *target;            /* Expression being aliased (Identifier or MemberExpr) */
+} AstAliasDeclaration;
 
 typedef struct {
     InternResult *intern_result; // Struct name
@@ -171,14 +190,17 @@ typedef struct {
 
 /* small expression structs */
 typedef ConstValue AstLiteral;
-typedef struct { InternResult *intern_result; } AstIdentifier; /* interned name index */
+typedef struct { 
+    InternResult *intern_result; 
+    Symbol *symbol; // Resolved during Sema 
+} AstIdentifier;
 typedef struct { AstNode *left; AstNode *right; OpKind op; } AstBinaryExpr;
 typedef struct { OpKind op; AstNode *expr; } AstUnaryExpr;
 typedef struct { AstNode *expr; OpKind op; } AstPostfixExpr;
 typedef struct { AstNode *lvalue; AstNode *rvalue; OpKind op; } AstAssignmentExpr;
 typedef struct { AstNode *callee; DynArray *args; } AstCallExpr;
 typedef struct { AstNode *target; AstNode *index; } AstSubscriptExpr;
-typedef struct { AstNode *target; InternResult *member; int field_index; } AstMemberExpr;
+typedef struct { AstNode *target; InternResult *member; int field_index; Symbol *symbol; } AstMemberExpr;
 
 typedef struct {
     InternResult *name; // The field name
@@ -187,7 +209,7 @@ typedef struct {
 } AstFieldInit;
 
 typedef struct {
-    InternResult *intern_result; // Struct type name
+    AstNode *type_node; // Struct type (Identifier or MemberExpr)
     DynArray *fields;            // Contains AstFieldInit*
 } AstStructLiteral;
 
@@ -212,7 +234,10 @@ typedef struct AstType {
 
     union {
         /* AST_TYPE_NAME */
-        struct { InternResult *intern_result; } base;  // record from interner for the type name
+        struct { 
+            InternResult *intern_result; // Simple name
+            AstNode *path;              // Optional: hierarchical path (e.g. std.mem.Allocator)
+        } base;
 
         /* AST_TYPE_PTR */
         struct { AstNode *target; } ptr;
@@ -232,11 +257,19 @@ typedef struct {
 
 
 /* ----------------------- AstNode ----------------------- */
+
+typedef enum {
+    AST_FLAG_NONE = 0,
+    AST_FLAG_CHECKED = 1 << 0
+} AstFlags;
+
 struct AstNode {
     AstNodeType node_type;
     Span span;
     const char *filename; // Originating module
     Type *type;  // semantic type information
+    int flags; // AstFlags
+    int last_checked_pass; // For multi-pass tracking
 
     /* constant folding / evaluation helper: inline value to avoid small allocations */
     int is_const_expr;       /* boolean: 0 or 1 */
@@ -249,6 +282,7 @@ struct AstNode {
         AstParam param;
         AstStructDeclaration struct_declaration;
         AstImportDeclaration import_declaration;
+        AstAliasDeclaration alias_declaration;
         struct {
             IntrinsicKind kind;
             DynArray *args; // Array of AstNode*

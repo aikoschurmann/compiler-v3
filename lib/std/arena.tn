@@ -1,36 +1,10 @@
-@link("malloc")
-fn libc_malloc(size: i64) -> *void;
-
-@link("free")
-fn libc_free(ptr: *void) -> void;
-
-pub struct Allocator {
-    ctx: *void;
-    alloc: fn(*void, i64) -> *void;
-    free: fn(*void, *void) -> void;
-}
-
-pub fn c_alloc_impl(ctx: *void, size: i64) -> *void {
-    return libc_malloc(size);
-}
-
-pub fn c_free_impl(ctx: *void, ptr: *void) -> void {
-    libc_free(ptr);
-}
-
-pub fn get_c_allocator() -> Allocator {
-    return Allocator {
-        ctx: 0 as *void,
-        alloc: c_alloc_impl,
-        free: c_free_impl
-    };
-}
+import std.mem;
 
 pub struct Arena {
     buffer: *char; // raw bytes
     capacity: i64;
     offset: i64;
-    backing_allocator: Allocator;
+    backing_allocator: std.mem.Allocator;
 }
 
 pub fn arena_alloc_impl(ctx: *void, size: i64) -> *void {
@@ -50,7 +24,7 @@ pub fn arena_alloc_impl(ctx: *void, size: i64) -> *void {
 pub fn arena_free_impl(ctx: *void, ptr: *void) -> void {
 }
 
-pub fn create_arena(backing: Allocator, size: i64) -> Arena {
+pub fn create_arena(backing: std.mem.Allocator, size: i64) -> Arena {
     buf: *char = backing.alloc(backing.ctx, size) as *char;
     return Arena {
         buffer: buf,
@@ -60,8 +34,8 @@ pub fn create_arena(backing: Allocator, size: i64) -> Arena {
     };
 }
 
-pub fn get_arena_allocator(arena: *Arena) -> Allocator {
-    return Allocator {
+pub fn get_arena_allocator(arena: *Arena) -> std.mem.Allocator {
+    return std.mem.Allocator {
         ctx: arena as *void,
         alloc: arena_alloc_impl,
         free: arena_free_impl

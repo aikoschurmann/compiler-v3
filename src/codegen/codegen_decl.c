@@ -1,4 +1,5 @@
 #include "codegen_internal.h"
+#include "sema/type_utils.h"
 
 void codegen_decl_proto(CodegenContext *ctx, AstNode *decl) {
     if (decl->node_type == AST_FUNCTION_DECLARATION) {
@@ -34,8 +35,8 @@ void codegen_decl_proto(CodegenContext *ctx, AstNode *decl) {
         const char *name           = "anon_func";
         char       *allocated_name = NULL;
         if (fdecl->intern_result && fdecl->intern_result->key) {
-            Slice *s = (Slice*)fdecl->intern_result->key;
-            allocated_name = strndup(s->ptr, s->len);
+            CompilationUnit *u = module_loader_get_unit(ctx->loader, decl->filename);
+            allocated_name = mangle_name(ctx, u, fdecl->intern_result);
             name = allocated_name;
         }
 
@@ -68,8 +69,8 @@ void codegen_decl_proto(CodegenContext *ctx, AstNode *decl) {
         const char *name           = "global_var";
         char       *allocated_name = NULL;
         if (vdecl->intern_result && vdecl->intern_result->key) {
-            Slice *s = (Slice*)vdecl->intern_result->key;
-            allocated_name = strndup(s->ptr, s->len);
+            CompilationUnit *u = module_loader_get_unit(ctx->loader, decl->filename);
+            allocated_name = mangle_name(ctx, u, vdecl->intern_result);
             name = allocated_name;
         }
 
@@ -93,8 +94,8 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
         const char *name           = "anon_func";
         char       *allocated_name = NULL;
         if (fdecl->intern_result && fdecl->intern_result->key) {
-            Slice *s = (Slice*)fdecl->intern_result->key;
-            allocated_name = strndup(s->ptr, s->len);
+            CompilationUnit *u = module_loader_get_unit(ctx->loader, decl->filename);
+            allocated_name = mangle_name(ctx, u, fdecl->intern_result);
             name = allocated_name;
         }
 
@@ -152,22 +153,28 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
                     codegen_expr(ctx, stmt);
                 }
             } else {
-                codegen_expr_stmt(ctx, fdecl->body);
+                codegen_statement(ctx, fdecl->body);
             }
 
             // Run deferred actions before implicit return and BEFORE destroying scope
             LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
-            if (!LLVMGetBasicBlockTerminator(current_block)) {
+            if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
                 for (int i = (int)ctx->deferred_actions->count - 1; i >= 0; i--) {
                     AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
-                    codegen_expr_stmt(ctx, body);
+                    codegen_statement(ctx, body);
                 }
                 
-                LLVMTypeRef ret_ty = LLVMGetReturnType(LLVMGlobalGetValueType(func));
-                if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind) {
-                    LLVMBuildRetVoid(ctx->builder);
-                } else {
-                    LLVMBuildRet(ctx->builder, LLVMConstNull(ret_ty));
+                // Re-fetch the insert block in case deferred actions altered the control flow
+                current_block = LLVMGetInsertBlock(ctx->builder);
+                if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
+                    bool sret_implicit = type_is_indirect(ctx, fn_type_sema->as.func.return_type);
+                    LLVMTypeRef ret_ty = sret_implicit ? LLVMVoidTypeInContext(ctx->context) : get_llvm_type(ctx, fn_type_sema->as.func.return_type);
+                    
+                    if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind) {
+                        LLVMBuildRetVoid(ctx->builder);
+                    } else {
+                        LLVMBuildRet(ctx->builder, LLVMConstNull(ret_ty));
+                    }
                 }
             }
 
@@ -183,43 +190,35 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
             memcpy(ext_name, s->ptr, s->len);
             ext_name[s->len] = '\0';
 
-            Slice *ns = (Slice*)fdecl->intern_result->key;
-            char *int_name = malloc(ns->len + 1);
-            memcpy(int_name, ns->ptr, ns->len);
-            int_name[ns->len] = '\0';
+            LLVMSetLinkage(func, LLVMInternalLinkage);
 
-            if (strcmp(ext_name, int_name) != 0) {
-                LLVMSetLinkage(func, LLVMInternalLinkage);
+            LLVMBasicBlockRef entry = LLVMAppendBasicBlockInContext(ctx->context, func, "entry");
+            LLVMPositionBuilderAtEnd(ctx->builder, entry);
 
-                LLVMBasicBlockRef entry = LLVMAppendBasicBlockInContext(ctx->context, func, "entry");
-                LLVMPositionBuilderAtEnd(ctx->builder, entry);
-
-                LLVMValueRef ext_func = LLVMGetNamedFunction(ctx->module, ext_name);
-                if (!ext_func) {
-                    ext_func = LLVMAddFunction(ctx->module, ext_name, LLVMGlobalGetValueType(func));
-                }
-
-                size_t param_count = LLVMCountParams(func);
-                LLVMValueRef *args = NULL;
-                if (param_count > 0) {
-                    args = malloc(sizeof(LLVMValueRef) * param_count);
-                    for (size_t i = 0; i < param_count; i++) {
-                        args[i] = LLVMGetParam(func, (unsigned int)i);
-                    }
-                }
-
-                LLVMTypeRef ret_ty = LLVMGetReturnType(LLVMGlobalGetValueType(func));
-                if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind) {
-                    LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(ext_func), ext_func, args, (unsigned int)param_count, "");
-                    LLVMBuildRetVoid(ctx->builder);
-                } else {
-                    LLVMValueRef call_res = LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(ext_func), ext_func, args, (unsigned int)param_count, "ffi_call");
-                    LLVMBuildRet(ctx->builder, call_res);
-                }
-                if (args) free(args);
+            LLVMValueRef ext_func = LLVMGetNamedFunction(ctx->module, ext_name);
+            if (!ext_func) {
+                ext_func = LLVMAddFunction(ctx->module, ext_name, LLVMGlobalGetValueType(func));
             }
+
+            size_t param_count = LLVMCountParams(func);
+            LLVMValueRef *args = NULL;
+            if (param_count > 0) {
+                args = malloc(sizeof(LLVMValueRef) * param_count);
+                for (size_t i = 0; i < param_count; i++) {
+                    args[i] = LLVMGetParam(func, (unsigned int)i);
+                }
+            }
+
+            LLVMTypeRef ret_ty = LLVMGetReturnType(LLVMGlobalGetValueType(func));
+            if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind) {
+                LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(ext_func), ext_func, args, (unsigned int)param_count, "");
+                LLVMBuildRetVoid(ctx->builder);
+            } else {
+                LLVMValueRef call_res = LLVMBuildCall2(ctx->builder, LLVMGlobalGetValueType(ext_func), ext_func, args, (unsigned int)param_count, "ffi_call");
+                LLVMBuildRet(ctx->builder, call_res);
+            }
+            if (args) free(args);
             free(ext_name);
-            free(int_name);
         }
         if (allocated_name) free(allocated_name);
 
@@ -229,8 +228,8 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
             const char *name           = "global_var";
             char       *allocated_name = NULL;
             if (vdecl->intern_result && vdecl->intern_result->key) {
-                Slice *s = (Slice*)vdecl->intern_result->key;
-                allocated_name = strndup(s->ptr, s->len);
+                CompilationUnit *u = module_loader_get_unit(ctx->loader, decl->filename);
+                allocated_name = mangle_name(ctx, u, vdecl->intern_result);
                 name = allocated_name;
             }
             LLVMValueRef gvar = LLVMGetNamedGlobal(ctx->module, name);

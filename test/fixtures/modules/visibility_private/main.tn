@@ -1,4 +1,4 @@
-import provider;
+import .provider;
 
 fn main() -> i32 {
     // These should all fail (non-pub)

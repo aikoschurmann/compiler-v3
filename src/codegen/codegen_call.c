@@ -70,7 +70,12 @@ static LLVMValueRef codegen_intrinsic_print(CodegenContext *ctx, AstNode *arg, b
 }
 
 LLVMValueRef codegen_expr_call(CodegenContext *ctx, AstNode *expr) {
-    if (!expr->type) ICE("Call expression missing type.");
+    if (!expr->type) {
+        AstCallExpr *c = &expr->data.call_expr;
+        const char *callee_name = "<complex>";
+        if (c->callee->node_type == AST_IDENTIFIER) callee_name = ((Slice*)c->callee->data.identifier.intern_result->key)->ptr;
+        ICE_AT(expr, "Call to '%s' missing type. (Sema failure?)", callee_name);
+    }
     AstCallExpr *call = &expr->data.call_expr;
 
     // Check for intrinsic
@@ -107,6 +112,8 @@ LLVMValueRef codegen_expr_call(CodegenContext *ctx, AstNode *expr) {
     if (!callee) return NULL;
 
     Type *fn_type_sema = call->callee->type;
+    if (!fn_type_sema) ICE_AT(call->callee, "Callee missing type during codegen.");
+    
     bool sret = type_is_indirect(ctx, fn_type_sema->as.func.return_type);
     
     LLVMTypeRef func_type = get_llvm_function_type(ctx, fn_type_sema);

@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 #include "file.h"
 #include "lexer.h"
@@ -62,7 +64,7 @@ int main(int argc, char **argv) {
     ModuleLoader *loader = module_loader_create(arena, &opts, keywords, identifiers, strings);
 
     // Recursive Load
-    exit_code = load_module_recursive(loader, path);
+    exit_code = load_module_recursive(loader, path, NULL, NULL);
     if (exit_code != EXIT_OK) goto cleanup;
 
     double t_load_end = now_seconds();
@@ -79,11 +81,11 @@ int main(int argc, char **argv) {
     TypeStore *store = typestore_create(arena, identifiers, keywords);
     TypeCheckContext type_ctx = typecheck_context_create(
         arena, 
-        loader->merged_program, 
         store, 
         identifiers, 
         keywords, 
-        path
+        path,
+        loader
     );
 
     // Run Semantic Passes
@@ -92,6 +94,16 @@ int main(int argc, char **argv) {
     double t4 = now_seconds();
     double t_sema = t4 - t3;
     size_t mem_sema = arena_total_allocated(arena) - mem_before_sema;
+
+    // Reporting
+    if (opts.print_ast) {
+        printf("--- AST ---\n");
+        for (size_t i = 0; i < loader->units_ordered->count; i++) {
+            CompilationUnit *u = *(CompilationUnit**)dynarray_get(loader->units_ordered, i);
+            printf("Module: %s\n", u->absolute_path);
+            print_ast(u->ast_root, 0, keywords, identifiers, strings);
+        }
+    }
 
     // Check for Semantic Errors
     if (type_ctx.errors->count > 0) {
@@ -107,7 +119,7 @@ int main(int argc, char **argv) {
     // ---------------------------------------------------------
     if (opts.verbose) printf("Code Generation...\n");
     double t5 = now_seconds();
-    CodegenContext *cg_ctx = codegen_context_create(loader->merged_program, store, "main_module", opts.opt_level);
+    CodegenContext *cg_ctx = codegen_context_create(store, "main_module", opts.opt_level, loader);
     if (codegen_program(cg_ctx) == 0) {
         if (opts.print_ir) codegen_dump_module(cg_ctx);
 
@@ -115,19 +127,34 @@ int main(int argc, char **argv) {
         snprintf(obj_path, sizeof(obj_path), "%s.o", opts.output_name);
         codegen_emit_object(cg_ctx, obj_path);
         
-        char link_cmd[512];
-        snprintf(link_cmd, sizeof(link_cmd), "cc %s src/core/runtime.c -o %s 2>/dev/null || cc %s -o %s", 
-                 obj_path, opts.output_name, obj_path, opts.output_name);
-        
-        if (system(link_cmd) == 0) {
-            if (opts.verbose) printf("Successfully compiled to '%s' executable.\n", opts.output_name);
-            if (opts.run_executable) {
-                char run_cmd[258];
-                snprintf(run_cmd, sizeof(run_cmd), "./%s", opts.output_name);
-                system(run_cmd);
+        if (opts.verbose) printf("Linking...\n");
+
+        pid_t pid = fork();
+        if (pid == 0) {
+            // Child process: try to link with runtime, fallback to simple link
+            char *args[] = {"cc", obj_path, "src/core/runtime.c", "-o", (char*)opts.output_name, NULL};
+            execvp("cc", args);
+            
+            // If execvp returns, it failed. Try without runtime.
+            char *fallback_args[] = {"cc", obj_path, "-o", (char*)opts.output_name, NULL};
+            execvp("cc", fallback_args);
+            exit(1);
+        } else if (pid > 0) {
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+                if (opts.verbose) printf("Successfully compiled to '%s' executable.\n", opts.output_name);
+                if (opts.run_executable) {
+                    char run_cmd[512];
+                    snprintf(run_cmd, sizeof(run_cmd), "./%s", opts.output_name);
+                    system(run_cmd); 
+                }
+            } else {
+                fprintf(stderr, "Error: Linking failed\n");
+                exit_code = EXIT_IO;
             }
         } else {
-            fprintf(stderr, "Error: Linking failed\n");
+            fprintf(stderr, "Error: fork failed\n");
             exit_code = EXIT_IO;
         }
     } else {
@@ -137,11 +164,6 @@ int main(int argc, char **argv) {
     codegen_context_destroy(cg_ctx);
     double t_codegen = now_seconds() - t5;
 
-    // Reporting
-    if (opts.print_ast) {
-        printf("--- AST ---\n");
-        print_ast(loader->merged_program, 0, keywords, identifiers, strings);
-    }
     if (opts.print_time) {
         printf("\n--- Metrics ---\n");
         printf("Time Parse/Load: %.3fms\n", t_parse * 1000);

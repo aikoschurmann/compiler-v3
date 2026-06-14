@@ -1,4 +1,4 @@
-import provider;
+import .provider { get_val, Data, SECRET };
 fn main() -> i32 {
     d: Data = Data { x: SECRET };
     return get_val() + d.x;

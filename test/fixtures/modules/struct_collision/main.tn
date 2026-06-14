@@ -1,5 +1,5 @@
-import mod_a;
-import mod_b;
+import .mod_a;
+import .mod_b;
 
 fn main() -> i32 {
 

@@ -2,12 +2,13 @@
 
 #include "ast.h"
 #include "type.h"
+#include "core/module_loader.h"
 
 // Forward declare the context to hide LLVM types from the header if possible,
 // but since we return it or use it, we can just define a struct.
 typedef struct CodegenContext CodegenContext;
 
-CodegenContext* codegen_context_create(AstNode *program, TypeStore *store, const char *module_name, int opt_level);
+CodegenContext* codegen_context_create(TypeStore *store, const char *module_name, int opt_level, ModuleLoader *loader);
 void codegen_context_destroy(CodegenContext *ctx);
 
 // Global initialization of LLVM targets. Should be called once at startup.

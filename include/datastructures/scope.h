@@ -10,6 +10,7 @@
 typedef struct Scope Scope;
 typedef struct Symbol Symbol;
 typedef struct AstNode AstNode;
+typedef struct CompilationUnit CompilationUnit;
 
 // Symbol kinds for better type safety and debugging
 typedef enum {
@@ -19,7 +20,9 @@ typedef enum {
     SYMBOL_VALUE_FUNCTION,
     SYMBOL_VALUE_TYPE,   // Added for type names (i32, f64, structs)
     SYMBOL_VALUE_INTRINSIC, // Added for compiler built-ins
-    SYMBOL_VARIABLE      // General runtime variable
+    SYMBOL_VARIABLE,      // General runtime variable
+    SYMBOL_VALUE_MODULE,   // Added for imported modules
+    SYMBOL_VALUE_ALIAS    // Added for local aliases
 } SymbolValue;
 
 
@@ -44,6 +47,8 @@ typedef struct Symbol {
     bool is_pub;         // Visibility
 
     AstNode *decl_node; // AST node that defined this symbol
+    Scope *module_scope; // Pointer to the global scope of an imported module
+    struct Symbol *target_symbol; // For aliases: pointer to the actual symbol
 
     SymbolValue kind;   // 4 bytes
     SymbolFlags flags;  // 4 bytes (Merged booleans here!)
@@ -65,6 +70,7 @@ typedef struct Scope {
     Symbol **symbols;
     size_t symbol_count;
     size_t capacity; // Size of the symbols array
+    DynArray symbols_list; // For efficient iteration
 
     Scope *parent;
     Arena *arena;                // Arena for memory allocation
@@ -74,6 +80,8 @@ typedef struct Scope {
     
     // Scope kind to distinguish symbol namespaces
     int kind; // ScopeKind
+
+    CompilationUnit *unit;
 
 } Scope;
 
@@ -105,4 +113,3 @@ void scope_check_unused_symbols(Scope *scope);
 // Debugging and introspection
 void scope_print_symbols(Scope *scope, int indent);
 void scope_print_hierarchy(Scope *scope);
-

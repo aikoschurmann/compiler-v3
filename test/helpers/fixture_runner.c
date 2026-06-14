@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int run_single_fixture(const char *dir_path, const char *name) {
     Arena *arena = arena_create(4 * 1024 * 1024);
@@ -12,22 +13,23 @@ static int run_single_fixture(const char *dir_path, const char *name) {
     DenseArenaInterner *strings = intern_table_create(hashmap_create(128), arena, string_copy_func, slice_hash, slice_cmp);
     lexer_populate_default_keywords(keywords);
 
-    Options opts = { .verbose = false };
+    Options opts = { .verbose = false, .stdlib_path = (char*)"lib" };
     ModuleLoader *loader = module_loader_create(arena, &opts, keywords, identifiers, strings);
     
     char main_path[512];
     snprintf(main_path, sizeof(main_path), "%s/main.tn", dir_path);
     
-    int load_res = load_module_recursive(loader, main_path);
+    int load_res = load_module_recursive(loader, main_path, NULL);
     if (load_res != 0) {
         test_log("      %s✗%s %-30s (Load failed: %d)\n", COL_RED, COL_RESET, name, load_res);
         arena_destroy(arena);
         return 0;
     }
+// 5. Sema
+TypeStore *store = typestore_create(arena, identifiers, keywords);
+TypeCheckContext sema_ctx = typecheck_context_create(arena, store, identifiers, keywords, main_path, loader);
+typecheck_program(&sema_ctx);
 
-    TypeStore *store = typestore_create(arena, identifiers, keywords);
-    TypeCheckContext sema_ctx = typecheck_context_create(arena, loader->merged_program, store, identifiers, keywords, main_path);
-    typecheck_program(&sema_ctx);
 
     char expect_path[512];
     snprintf(expect_path, sizeof(expect_path), "%s/expect.txt", dir_path);
@@ -58,27 +60,31 @@ static int run_single_fixture(const char *dir_path, const char *name) {
                     success = 0;
                 }
             } else {
-                // Default: just check for at least one error
                 if (sema_ctx.errors->count == 0) {
                     test_log("      %s✗%s %-30s (Expected error, but passed)\n", COL_RED, COL_RESET, name);
                     success = 0;
                 }
             }
         }
- else if (strncmp(line, "exit:", 5) == 0) {
-            int expected_exit = atoi(line + 5);
-            CodegenContext *cg_ctx = codegen_context_create(loader->merged_program, store, "jit_module", 0);
-            if (codegen_program(cg_ctx) == 0) {
-                int actual_exit = codegen_run_jit(cg_ctx);
-                if (actual_exit != expected_exit) {
-                    test_log("      %s✗%s %-30s (Exit code: %d != %d)\n", COL_RED, COL_RESET, name, actual_exit, expected_exit);
+        else if (strncmp(line, "exit:", 5) == 0) {
+            if (sema_ctx.errors->count > 0) {
+                test_log("      %s✗%s %-30s (Sema errors occurred, skipping codegen)\n", COL_RED, COL_RESET, name);
+                success = 0;
+            } else {
+                int expected_exit = atoi(line + 5);
+                CodegenContext *cg_ctx = codegen_context_create(store, "jit_module", 0, loader);
+                if (codegen_program(cg_ctx) == 0) {
+                    int actual_exit = codegen_run_jit(cg_ctx);
+                    if (actual_exit != expected_exit) {
+                        test_log("      %s✗%s %-30s (Exit code: %d != %d)\n", COL_RED, COL_RESET, name, actual_exit, expected_exit);
+                        success = 0;
+                    }
+                } else {
+                    test_log("      %s✗%s %-30s (Codegen failed)\n", COL_RED, COL_RESET, name);
                     success = 0;
                 }
-            } else {
-                test_log("      %s✗%s %-30s (Codegen failed)\n", COL_RED, COL_RESET, name);
-                success = 0;
+                codegen_context_destroy(cg_ctx);
             }
-            codegen_context_destroy(cg_ctx);
         }
     }
 

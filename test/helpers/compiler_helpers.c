@@ -5,7 +5,7 @@
 
 TestCompileResult test_compile_source(const char *src) {
     TestCompileResult res = {0};
-    res.arena = arena_create(2 * 1024 * 1024); // 2MB
+    res.arena = arena_create(4 * 1024 * 1024); // 4MB
     
     // 1. Interners
     DenseArenaInterner *keywords = intern_table_create(hashmap_create(32), res.arena, string_copy_func, slice_hash, slice_cmp);
@@ -30,9 +30,24 @@ TestCompileResult test_compile_source(const char *src) {
         return res;
     }
 
-    // 4. Sema
+    // 4. Module Loader
+    Options opts = { .stdlib_path = "lib", .verbose = false };
+    ModuleLoader *loader = module_loader_create(res.arena, &opts, keywords, identifiers, strings);
+    
+    CompilationUnit *unit = arena_alloc(res.arena, sizeof(CompilationUnit));
+    unit->absolute_path = (char*)"<test>";
+    unit->logical_path = NULL;
+    unit->ast_root = res.program;
+    unit->global_scope = NULL;
+    unit->signatures_resolved = false;
+    unit->imports_resolved = false;
+    
+    hashmap_put(loader->units, unit->absolute_path, unit, str_hash, str_cmp);
+    dynarray_push_value(loader->units_ordered, &unit);
+
+    // 5. Sema
     res.store = typestore_create(res.arena, identifiers, keywords);
-    res.sema_ctx = typecheck_context_create(res.arena, res.program, res.store, identifiers, keywords, "<test>");
+    res.sema_ctx = typecheck_context_create(res.arena, res.store, identifiers, keywords, "<test>", loader);
     typecheck_program(&res.sema_ctx);
     
     if (res.sema_ctx.errors->count > 0) {
@@ -44,7 +59,6 @@ TestCompileResult test_compile_source(const char *src) {
 
 void test_cleanup_compilation(TestCompileResult *res) {
     if (res->arena) arena_destroy(res->arena);
-    // Lexer and other objects are in the arena
 }
 
 bool test_is_lex_valid(const char *src) {
@@ -56,19 +70,14 @@ bool test_is_lex_valid(const char *src) {
 }
 
 bool test_is_parse_valid(const char *src) {
-    TestCompileResult res = test_compile_source(src);
-    bool ok = (res.program != NULL && !res.failed); // This is a bit coarse but works for now
-    // Actually, test_compile_source checks sema too. 
-    // Let's refine:
-    TestCompileResult res2 = {0};
-    res2.arena = arena_create(1024 * 1024);
-    res2.lexer = lexer_create(src, strlen(src), res2.arena);
-    lexer_lex_all(res2.lexer);
-    res2.parser = parser_create(res2.lexer->tokens, "<test>", res2.arena);
+    Arena *arena = arena_create(1024 * 1024);
+    Lexer *l = lexer_create(src, strlen(src), arena);
+    lexer_lex_all(l);
+    Parser *p = parser_create(l->tokens, "<test>", arena);
     ParseError p_err = {0};
-    res2.program = parse_program(res2.parser, &p_err);
-    ok = (p_err.message == NULL);
-    test_cleanup_compilation(&res2);
+    AstNode *prog = parse_program(p, &p_err);
+    bool ok = (p_err.message == NULL && prog != NULL);
+    arena_destroy(arena);
     return ok;
 }
 
@@ -81,9 +90,6 @@ bool test_is_sema_valid(const char *src) {
         if (res.sema_ctx.errors) {
             for (size_t i = 0; i < res.sema_ctx.errors->count; i++) {
                 TypeError *err = (TypeError*)dynarray_get(res.sema_ctx.errors, i);
-                // We need to capture the output of print_type_error
-                // For now, let's just log the kind. 
-                // A better fix would be to make print_type_error take a FILE* or buffer.
                 test_log("      Error %zu: Type Error Kind %d\n", i + 1, err->kind);
             }
         }
@@ -112,14 +118,14 @@ int test_run_and_get_exit_code(const char *src) {
     TestCompileResult res = test_compile_source(src);
     if (res.failed) {
         test_cleanup_compilation(&res);
-        return -100; // Compilation failed
+        return -100;
     }
     
-    CodegenContext *cg_ctx = codegen_context_create(res.program, res.store, "test_jit", 0);
+    CodegenContext *cg_ctx = codegen_context_create(res.store, "test_jit", 0, res.sema_ctx.loader);
     if (codegen_program(cg_ctx) != 0) {
         codegen_context_destroy(cg_ctx);
         test_cleanup_compilation(&res);
-        return -101; // Codegen failed
+        return -101;
     }
 
     int exit_code = codegen_run_jit(cg_ctx);

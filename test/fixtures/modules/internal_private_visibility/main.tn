@@ -1,4 +1,4 @@
-import provider;
+import .provider { public_api };
 
 fn main() -> i32 {
     return public_api();

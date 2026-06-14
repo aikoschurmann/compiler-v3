@@ -20,11 +20,12 @@ typedef struct CodegenMap {
 } CodegenMap;
 
 struct CodegenContext {
-    AstNode *program;
     TypeStore *store;
     LLVMContextRef context;
     LLVMModuleRef module;
     LLVMBuilderRef builder;
+    LLVMTargetRef target;
+    LLVMTargetMachineRef machine;
     LLVMTargetDataRef target_data;
     HashMap *globals;
     HashMap *type_cache;
@@ -32,6 +33,8 @@ struct CodegenContext {
     LLVMBasicBlockRef loop_cond_bb;
     LLVMBasicBlockRef loop_end_bb;
     int opt_level;
+    
+    ModuleLoader *loader; // Added for module name mangling
     
     // For sret
     Type *current_func_type;
@@ -55,17 +58,17 @@ bool         type_is_address_only(Type *t);
 bool         type_is_indirect(CodegenContext *ctx, Type *t);
 LLVMValueRef codegen_load_value(CodegenContext *ctx, LLVMValueRef ptr, Type *type);
 LLVMValueRef create_entry_block_alloca(CodegenContext *ctx, LLVMTypeRef ty, const char *name);
+char*        mangle_name(CodegenContext *ctx, CompilationUnit *unit, InternResult *symbol_name);
 size_t       struct_field_index(Type *struct_type, const char *field_name);
 LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr);
 LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr);
+void         codegen_statement(CodegenContext *ctx, AstNode *stmt);
 
 /* --- Sub-dispatchers for codegen_expr --- */
 
 LLVMValueRef codegen_expr_literal(CodegenContext *ctx, AstNode *expr);
 LLVMValueRef codegen_expr_ident(CodegenContext *ctx, AstNode *expr);
 LLVMValueRef codegen_expr_ops(CodegenContext *ctx, AstNode *expr);
-LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr);
-LLVMValueRef codegen_expr_stmt(CodegenContext *ctx, AstNode *expr);
 LLVMValueRef codegen_expr_call(CodegenContext *ctx, AstNode *expr);
 
 /* --- Decl logic --- */

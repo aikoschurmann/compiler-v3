@@ -201,14 +201,20 @@ Type* check_identifier(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
         return NULL;
     }
 
+    ident->symbol = sym; // Store resolved symbol!
+
     // Demand-driven resolution for global constants
     if ((sym->flags & SYMBOL_FLAG_CONST) && !(sym->flags & SYMBOL_FLAG_COMPUTED_VALUE)) {
         if (sym->decl_node) {
             // Recurse into variable declaration check
-            // Note: global scope is used here because constants are top-level
             Scope *global_scope = scope;
-            while (global_scope->parent) global_scope = global_scope->parent;
-            check_variable_declaration(ctx, global_scope, sym->decl_node);
+            // Bound traversal to the unit's global scope (depth == 1)
+            while (global_scope && global_scope->depth > 1) {
+                global_scope = global_scope->parent;
+            }
+            if (global_scope) {
+                check_variable_declaration(ctx, global_scope, sym->decl_node);
+            }
         }
     }
 
@@ -227,6 +233,10 @@ Type* check_identifier(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
         } else if (type_is_char(sym->type)) {
             expr->const_value.type = CHAR_LITERAL;
             expr->const_value.value.char_val = (char)sym->value.int_val;
+        } else if (sym->type->kind == TYPE_STRUCT || sym->type->kind == TYPE_ARRAY) {
+             // Structs and arrays can be constant too, even if we don't store their full value in ConstValue.
+             // The is_const_expr flag tells codegen to handle them specially (e.g. as LLVM constant).
+             expr->is_const_expr = 1;
         }
     } else {
         expr->is_const_expr = 0;
@@ -542,6 +552,18 @@ Type* check_initializer_list(TypeCheckContext *ctx, Scope *scope, AstNode *expr,
     InternResult *res = intern_type(ctx->store, &new_type);
     Type *concrete_type = (Type*)((Slice*)res->key)->ptr;
     
+    // Check if the initializer list is entirely composed of constant expressions
+    bool all_const = true;
+    for (size_t i = 0; i < elem_count; i++) {
+        AstNode **node_ptr = (AstNode**)dynarray_get(list->elements, i);
+        AstNode *node = *node_ptr;
+        if (!node->is_const_expr) {
+            all_const = false;
+            break;
+        }
+    }
+    expr->is_const_expr = all_const ? 1 : 0;
+
     expr->type = concrete_type;
     return concrete_type;
 }
@@ -549,16 +571,18 @@ Type* check_initializer_list(TypeCheckContext *ctx, Scope *scope, AstNode *expr,
 Type* check_struct_literal(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *expected_type) {
     AstStructLiteral *lit = &expr->data.struct_literal;
 
-    Symbol *sym = scope_lookup_symbol(scope, lit->intern_result, ctx->filename);
-    if (!sym || sym->kind != SYMBOL_VALUE_TYPE || sym->type->kind != TYPE_STRUCT) {
+    Type *struct_type = NULL;
+    if (lit->type_node) {
+         struct_type = resolve_ast_type(ctx, scope, lit->type_node);
+    }
+
+    if (!struct_type || struct_type->kind != TYPE_STRUCT) {
         const char *name_str = "<unknown>";
-        if (lit->intern_result && lit->intern_result->key) name_str = ((Slice*)lit->intern_result->key)->ptr;
         TypeError err = { .kind = TE_UNKNOWN_TYPE, .span = expr->span, .filename = ctx->filename, .as.name.name = name_str };
         dynarray_push_value(ctx->errors, &err);
         return NULL;
     }
 
-    Type *struct_type = sym->type;
     expr->type = struct_type; // Ensure type is set early
     size_t defined_field_count = struct_type->as.struct_type.field_count;
     size_t lit_field_count = lit->fields ? lit->fields->count : 0;
@@ -808,9 +832,41 @@ Type* check_binary(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *exp
 
 Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
     AstMemberExpr *member_expr = &expr->data.member_expr;
-    
+    member_expr->symbol = NULL; // Reset
+
     // 1. Resolve the target (e.g., the `arr` in `arr.len`)
     Type *target_type = check_expression(ctx, scope, member_expr->target, NULL);
+    
+    // 2. Special case: Module access (nested or otherwise)
+    if (member_expr->target->node_type == AST_IDENTIFIER || member_expr->target->node_type == AST_MEMBER_EXPR) {
+        // If the target is an identifier or another member expression, check if it resolved to a module
+        Symbol *target_sym = NULL;
+        if (member_expr->target->node_type == AST_IDENTIFIER) {
+            target_sym = scope_lookup_symbol(scope, member_expr->target->data.identifier.intern_result, ctx->filename);
+        } else {
+            target_sym = member_expr->target->data.member_expr.symbol;
+        }
+
+        if (target_sym && target_sym->kind == SYMBOL_VALUE_MODULE) {
+            // Target is a module! Access its symbols.
+            Symbol *member_sym = scope_lookup_symbol_local(target_sym->module_scope, member_expr->member);
+            if (!member_sym || !member_sym->is_pub) {
+                const char *field_name = "<unknown>";
+                if (member_expr->member && member_expr->member->key) {
+                    field_name = ((Slice*)member_expr->member->key)->ptr;
+                }
+                TypeError err = { .kind = TE_UNDECLARED, .span = expr->span, .filename = ctx->filename };
+                err.as.name.name = field_name;
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+            
+            member_expr->symbol = member_sym;
+            expr->type = member_sym->type;
+            return expr->type;
+        }
+    }
+
     if (!target_type) return NULL;
 
     Type *underlying = target_type;
@@ -818,7 +874,7 @@ Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
         underlying = underlying->as.ptr.base;
     }
 
-    // 2. Dispatch based on the type we are accessing
+    // 3. Dispatch based on the type we are accessing
     switch (underlying->kind) {
         
         case TYPE_ARRAY:

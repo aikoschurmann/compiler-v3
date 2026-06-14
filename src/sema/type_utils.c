@@ -90,5 +90,10 @@ bool type_can_implicit_cast(Type *target, Type *source) {
         }
     }
 
+    // 4. String decay: str -> *char
+    if (target->kind == TYPE_POINTER && source->kind == TYPE_PRIMITIVE && source->as.primitive == PRIM_STR) {
+        return type_is_char(target->as.ptr.base);
+    }
+
     return false;
 }

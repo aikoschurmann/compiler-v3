@@ -147,7 +147,7 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
         if (ctx->loop_end_bb) {
             for (int i = (int)ctx->deferred_actions->count - 1; i >= (int)ctx->loop_defer_count; i--) {
                 AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
-                codegen_expr_stmt(ctx, body);
+                codegen_statement(ctx, body);
             }
             LLVMBuildBr(ctx->builder, ctx->loop_end_bb);
         }
@@ -158,7 +158,7 @@ LLVMValueRef codegen_expr_flow(CodegenContext *ctx, AstNode *expr) {
         if (ctx->loop_cond_bb) {
             for (int i = (int)ctx->deferred_actions->count - 1; i >= (int)ctx->loop_defer_count; i--) {
                 AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
-                codegen_expr_stmt(ctx, body);
+                codegen_statement(ctx, body);
             }
             LLVMBuildBr(ctx->builder, ctx->loop_cond_bb);
         }
