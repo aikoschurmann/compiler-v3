@@ -933,7 +933,7 @@ static void resolve_imports(TypeCheckContext *ctx, CompilationUnit *unit) {
                 // Intermediate component (e.g., 'std' in 'std.libc')
                 Symbol *existing = scope_lookup_symbol_local(current_bind_scope, part);
                 if (existing) {
-                    if (existing->kind != SYMBOL_VALUE_MODULE) {
+                    if (existing->kind != SYMBOL_VALUE_MODULE && existing->kind != SYMBOL_VALUE_NAMESPACE) {
                          TypeError err = { .kind = TE_REDECLARATION, .span = decl->span, .filename = unit->absolute_path };
                          err.as.name.name = "Import path component conflicts with existing symbol";
                          dynarray_push_value(ctx->errors, &err);
@@ -941,9 +941,9 @@ static void resolve_imports(TypeCheckContext *ctx, CompilationUnit *unit) {
                     }
                     current_bind_scope = existing->module_scope;
                 } else {
-                    // Create a dummy module symbol for the namespace. 
-                    // This dummy is 'pub' so we can traverse it.
-                    Symbol *ns_sym = scope_define_symbol(current_bind_scope, part, NULL, SYMBOL_VALUE_MODULE, NULL, true, NULL);
+                    // Create a namespace symbol for the namespace. 
+                    // This namespace is 'pub' so we can traverse it.
+                    Symbol *ns_sym = scope_define_symbol(current_bind_scope, part, NULL, SYMBOL_VALUE_NAMESPACE, NULL, true, NULL);
                     ns_sym->module_scope = scope_create(ctx->store->arena, NULL, 16, SCOPE_IDENTIFIERS);
                     
                     // But if it's in the root global scope, it should be private by default.

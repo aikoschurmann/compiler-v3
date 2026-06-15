@@ -1008,8 +1008,8 @@ static Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *exp
             target_sym = member_expr->target->data.member_expr.symbol;
         }
 
-        if (target_sym && target_sym->kind == SYMBOL_VALUE_MODULE) {
-            // Target is a module! Access its symbols.
+        if (target_sym && (target_sym->kind == SYMBOL_VALUE_MODULE || target_sym->kind == SYMBOL_VALUE_NAMESPACE)) {
+            // Target is a module/namespace! Access its symbols.
             Symbol *member_sym = scope_lookup_symbol_local(target_sym->module_scope, member_expr->member);
             if (!member_sym || !member_sym->is_pub) {
                 const char *field_name = "<unknown>";
@@ -1021,11 +1021,12 @@ static Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *exp
                 dynarray_push_value(ctx->errors, &err);
                 return NULL;
             }
-            
+
             member_expr->symbol = member_sym;
             expr->type = member_sym->type;
             return expr->type;
         }
+
     }
 
     if (!target_type) return NULL;

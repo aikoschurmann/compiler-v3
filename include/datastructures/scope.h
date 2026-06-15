@@ -22,6 +22,7 @@ typedef enum {
     SYMBOL_VALUE_INTRINSIC, // Added for compiler built-ins
     SYMBOL_VARIABLE,      // General runtime variable
     SYMBOL_VALUE_MODULE,   // Added for imported modules
+    SYMBOL_VALUE_NAMESPACE, // Added for synthetic namespace path components
     SYMBOL_VALUE_ALIAS    // Added for local aliases
 } SymbolValue;
 

@@ -157,6 +157,7 @@ static const char* symbol_kind_to_str(SymbolValue kind) {
         case SYMBOL_VALUE_TYPE:     return "Type/Struct";
         case SYMBOL_VALUE_ALIAS:    return "Alias";
         case SYMBOL_VALUE_MODULE:   return "Module";
+        case SYMBOL_VALUE_NAMESPACE:return "Namespace";
         case SYMBOL_VALUE_INTRINSIC:return "Intrinsic";
         default:                    return "Unknown";
     }
