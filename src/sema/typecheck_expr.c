@@ -1,4 +1,5 @@
 #include "sema/typecheck_expr.h"
+#include "sema/type_coerce.h"
 #include "sema/type_utils.h"
 #include "sema/symbol_utils.h"
 #include "sema/typecheck.h"
@@ -11,77 +12,7 @@
 #include <stdio.h>
 
 // =============================================================================
-// SECTION 1: CASTING AND COERCION HELPERS
-// =============================================================================
-
-/**
- * Inserts an explicit AST_CAST node between a node and its parent.
- * This is used for both implicit coercions and explicit 'as' casts.
- */
-void insert_cast(TypeCheckContext *ctx, AstNode *node, Type *to_type) {
-    if (!node || !to_type) return;
-    if (node->type == to_type) return;
-
-    // We clone the current node into a new memory location so the original
-    // node can be transformed into the cast container.
-    AstNode *original = arena_alloc(ctx->store->arena, sizeof(AstNode));
-    memcpy(original, node, sizeof(AstNode));
-
-    node->node_type = AST_CAST;
-    node->type = to_type;
-    node->span = original->span; 
-    
-    node->data.cast_expr.expr = original;
-    node->data.cast_expr.target_type = to_type;
-
-    // Propagate constant-folding metadata
-    node->is_foldable_const = original->is_foldable_const;
-    node->is_llvm_const_safe = original->is_llvm_const_safe;
-    
-    if (original->is_foldable_const) {
-        node->const_value = original->const_value; 
-        if (type_is_integer(original->type) && type_is_float(to_type)) {
-            node->const_value.type = FLOAT_LITERAL;
-            node->const_value.value.float_val = (double)original->const_value.value.int_val;
-        } 
-        else if (type_is_float(original->type) && type_is_integer(to_type)) {
-            node->const_value.type = INT_LITERAL;
-            node->const_value.value.int_val = (int64_t)original->const_value.value.float_val;
-        }
-        else if (type_is_integer(original->type) && type_is_integer(to_type)) {
-            node->const_value.type = INT_LITERAL;
-        }
-    }
-}
-
-/**
- * Checks if a node can be implicitly coerced to the expected type.
- * If yes, it performs the cast and returns the new type.
- * If no, it logs a TE_TYPE_MISMATCH error.
- */
-Type* coerce_or_error(TypeCheckContext *ctx, AstNode *node, Type *expected) {
-    if (!node || !expected) return node ? node->type : NULL;
-    Type *actual = node->type;
-    if (actual == expected) return actual;
-
-    // Check bidirectional compatibility rules (e.g. array-to-slice decay)
-    if (type_can_implicit_cast(expected, actual)) {
-        insert_cast(ctx, node, expected);
-        return expected;
-    }
-
-    TypeError err = {
-        .kind = TE_TYPE_MISMATCH,
-        .span = node->span,
-        .filename = ctx->filename,
-        .as.mismatch = { .expected = expected, .actual = actual }
-    };
-    dynarray_push_value(ctx->errors, &err);
-    return NULL;
-}
-
-// =============================================================================
-// SECTION 2: CONSTANT FOLDING HELPERS
+// SECTION 1: CONSTANT FOLDING HELPERS
 // =============================================================================
 
 static Type* unite_numeric_types(TypeCheckContext *ctx, Type *a, Type *b) {
@@ -1188,40 +1119,7 @@ static Type* check_cast(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
     Type *src_type = check_expression(ctx, scope, cast->expr, NULL);
     if (!src_type) return NULL;
 
-    // Validation logic for explicit casts
-    bool valid = false;
-
-    // 1. Numeric <-> Numeric (iN, fN, char)
-    if ((type_is_numeric(src_type) || type_is_char(src_type)) && 
-        (type_is_numeric(cast->target_type) || type_is_char(cast->target_type))) {
-        valid = true;
-    } 
-    // 2. Bool -> Numeric (0 or 1)
-    else if (type_is_bool(src_type) && (type_is_numeric(cast->target_type) || type_is_char(cast->target_type))) {
-        valid = true;
-    }
-    // 3. Pointer -> Pointer
-    else if (src_type->kind == TYPE_POINTER && cast->target_type->kind == TYPE_POINTER) {
-        valid = true;
-    }
-    // 4. Pointer <-> i64 (Bit reinterpretation)
-    else if ((src_type->kind == TYPE_POINTER && type_is_integer(cast->target_type)) ||
-             (type_is_integer(src_type) && cast->target_type->kind == TYPE_POINTER)) {
-
-        Type *int_type = (src_type->kind == TYPE_POINTER) ? cast->target_type : src_type;
-        if (int_type->as.primitive == PRIM_I64) {
-            valid = true;
-        }
-    }
-
-    // 5. Array -> Slice (Decay)
-    else if (src_type->kind == TYPE_ARRAY && cast->target_type->kind == TYPE_SLICE) {
-        if (src_type->as.array.base == cast->target_type->as.slice.base) {
-            valid = true;
-        }
-    }
-
-    if (!valid) {
+    if (!type_can_explicit_cast(cast->target_type, src_type)) {
         TypeError err = { 
             .kind = TE_TYPE_MISMATCH, 
             .span = expr->span, 
@@ -1232,29 +1130,7 @@ static Type* check_cast(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
         return NULL;
     }
 
-    // Constant folding for casts
-    if (cast->expr->is_foldable_const) {
-        expr->is_foldable_const = 1;
-        expr->is_llvm_const_safe = 1;
-        expr->const_value = cast->expr->const_value;
-        
-        if (type_is_bool(src_type)) {
-             expr->const_value.type = INT_LITERAL;
-             expr->const_value.value.int_val = cast->expr->const_value.value.bool_val ? 1 : 0;
-        }
-
-        if (type_is_float(cast->target_type)) {
-            expr->const_value.type = FLOAT_LITERAL;
-            if (type_is_integer(src_type) || type_is_char(src_type)) {
-                expr->const_value.value.float_val = (double)cast->expr->const_value.value.int_val;
-            }
-        } else if (type_is_integer(cast->target_type) || type_is_char(cast->target_type)) {
-            expr->const_value.type = type_is_char(cast->target_type) ? CHAR_LITERAL : INT_LITERAL;
-            if (type_is_float(src_type)) {
-                expr->const_value.value.int_val = (int64_t)cast->expr->const_value.value.float_val;
-            }
-        }
-    }
+    fold_cast_node(expr);
 
     return cast->target_type;
 }

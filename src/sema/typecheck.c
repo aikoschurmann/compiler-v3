@@ -1,4 +1,5 @@
 #include "sema/typecheck.h"
+#include "sema/type_coerce.h"
 #include "sema/type_utils.h"
 #include "sema/symbol_utils.h"
 #include "sema/typecheck_expr.h"

@@ -1,8 +1,21 @@
+/**
+ * @file type_print.c
+ * @brief Utilities for formatting and printing the compiler's type system.
+ * * This module is responsible for serializing internal compiler types into 
+ * human-readable strings for error messages (`type_report.c`) and for the 
+ * `--types` CLI debugging flag.
+ */
+
 #include "sema/type_print.h"
 #include "sema/type.h"
+#include "sema/symbol_utils.h" // Needed for Symbol and Scope definitions
 #include "parsing/ast.h"
 #include <stdio.h>
 #include <string.h>
+
+// =============================================================================
+// ANSI TERMINAL COLORS
+// =============================================================================
 
 #define RESET   "\033[0m"
 #define BOLD    "\033[1m"
@@ -25,6 +38,14 @@
 #define COL_PTR            MAGENTA
 #define COL_NUM            YELLOW
 
+// =============================================================================
+// INTERNAL TYPE SERIALIZATION
+// =============================================================================
+
+/**
+ * Recursively prints a Type object to the given file stream.
+ * Used internally for both error reporting and type dumping.
+ */
 static void type_print_internal(FILE *out, const Type *type) {
     if (!type) {
         fprintf(out, "null");
@@ -32,7 +53,10 @@ static void type_print_internal(FILE *out, const Type *type) {
     }
 
     switch (type->kind) {
-        case TYPE_VOID: fprintf(out, "void"); break;
+        case TYPE_VOID: 
+            fprintf(out, "void"); 
+            break;
+            
         case TYPE_PRIMITIVE: {
             switch (type->as.primitive) {
                 case PRIM_I32:  fprintf(out, "i32"); break;
@@ -85,9 +109,16 @@ static void type_print_internal(FILE *out, const Type *type) {
     }
 }
 
+/**
+ * Public API wrapper for printing types.
+ */
 void type_print(FILE *out, const Type *type) {
     type_print_internal(out, type);
 }
+
+// =============================================================================
+// CLI DUMP FORMATTING HELPERS
+// =============================================================================
 
 static const char* get_kind_name(const Type *type) {
     if (!type) return "NULL";
@@ -119,9 +150,21 @@ static const char* get_kind_color(const Type *type) {
     }
 }
 
+static const char* symbol_kind_to_str(SymbolValue kind) {
+    switch (kind) {
+        case SYMBOL_VARIABLE:       return "Variable";
+        case SYMBOL_VALUE_FUNCTION: return "Function";
+        case SYMBOL_VALUE_TYPE:     return "Type/Struct";
+        case SYMBOL_VALUE_ALIAS:    return "Alias";
+        case SYMBOL_VALUE_MODULE:   return "Module";
+        case SYMBOL_VALUE_INTRINSIC:return "Intrinsic";
+        default:                    return "Unknown";
+    }
+}
+
 static void print_header(void) {
     printf("\n" BOLD "═══════════════════════════════════════════════════════════════════" RESET "\n");
-    printf(BOLD "                    TYPE INTERNMENT ANALYSIS" RESET "\n");
+    printf(BOLD "                    COMPILER STATE ANALYSIS" RESET "\n");
     printf(BOLD "═══════════════════════════════════════════════════════════════════" RESET "\n");
 }
 
@@ -158,64 +201,25 @@ static const char *safe_symbol_name(InternResult *name_rec) {
     return (const char *)((Slice *)name_rec->key)->ptr;
 }
 
-static void print_symbol_info(AstNode *func_decl) {
-    InternResult *intern_result = func_decl->data.function_declaration.intern_result;
-    const char *func_name = safe_symbol_name(intern_result);
+// =============================================================================
+// MAIN COMPILER STATE DUMPER (--types)
+// =============================================================================
 
-    printf("  " BOLD "%s" RESET "\n", func_name);
-
-    if (intern_result) {
-        printf("    symbol ptr: " DIM "%p" RESET "\n", (void *)intern_result);
-    } else {
-        printf("    symbol ptr: " COL_PTR "none" RESET "\n");
-    }
-}
-
-static void print_function_type_info(AstNode *func_decl) {
-    if (!func_decl->type) {
-        printf("    type: " COL_PTR "none" RESET "\n");
-        return;
-    }
-
-    printf("    type:   ");
-    type_print_internal(stdout, func_decl->type);
-    printf(" %s(%s)" RESET "\n", get_kind_color(func_decl->type), get_kind_name(func_decl->type));
-
-    if (func_decl->type->kind != TYPE_FUNCTION) return;
-
-    size_t param_count = func_decl->type->as.func.param_count;
-    printf("    params (%zu):\n", param_count);
-
-    for (size_t p = 0; p < param_count; p++) {
-        Type *param_type = func_decl->type->as.func.params[p];
-
-        printf("      param[%zu]: ", p);
-        type_print_internal(stdout, param_type);
-        printf(" %s(%s)" RESET "\n", get_kind_color(param_type), get_kind_name(param_type));
-    }
-
-    Type *return_type = func_decl->type->as.func.return_type;
-    if (return_type) {
-        printf("    return: ");
-        type_print_internal(stdout, return_type);
-        printf(" %s(%s)" RESET "\n", get_kind_color(return_type), get_kind_name(return_type));
-    } else {
-        printf("    return: " COL_PTR "none" RESET "\n");
-    }
-}
-
-void type_print_store_dump(TypeStore *store, AstNode *program) {
-    if (!store || !store->type_interner) return; /* nothing to show */
+/**
+ * Dumps the entire state of the TypeStore (Interner) and the main Module's 
+ * Symbol Table (Global Scope). Activated via the `--types` CLI flag.
+ */
+void type_print_store_dump(TypeStore *store, Scope *global_scope) {
+    if (!store || !store->type_interner) return; 
 
     print_header();
+    printf("Total unique types interned: " COL_NUM "%d" RESET "\n", store->type_interner->dense_index_count);
 
-    printf("Total types interned: " COL_NUM "%d" RESET "\n",
-           store->type_interner->dense_index_count);;
-
-    /* Interned types list */
+    // -------------------------------------------------------------------------
+    // 1. DUMP INTERNED TYPES
+    // -------------------------------------------------------------------------
     printf("\n" BOLD "Interned Types:" RESET "\n");
     printf("--------------\n");
-
     int count = store->type_interner->dense_index_count;
     if (count <= 0) {
         printf(" " DIM "(none)" RESET "\n");
@@ -225,31 +229,104 @@ void type_print_store_dump(TypeStore *store, AstNode *program) {
         for (int i = 0; i < count; i++) {
             InternResult **result_ptr = (InternResult **)dynarray_get(store->type_interner->dense_array, i);
             if (!result_ptr || !*result_ptr) continue;
+            
             InternResult *result = *result_ptr;
             Slice *key_slice = (Slice *)result->key;
             if (!key_slice || !key_slice->ptr) continue;
+            
             Type *type = (Type *)key_slice->ptr;
             print_interned_type_line(i, index_width, type);
         }
     }
 
-    /* Function symbol mapping */
-    if (!program || !program->data.program.decls || program->data.program.decls->count == 0) {
-        printf("\n" DIM "No function declarations found." RESET "\n");
-        return;
+    if (!global_scope) return;
+
+    // -------------------------------------------------------------------------
+    // 2. DUMP GLOBAL SYMBOL TABLE
+    // -------------------------------------------------------------------------
+    printf("\n" BOLD "Global Symbol Table:" RESET "\n");
+    printf("--------------------\n");
+
+    if (global_scope->symbols_list.count == 0) {
+         printf(" " DIM "(no symbols in global scope)" RESET "\n");
     }
 
-    printf("\n" BOLD "Function Symbol Mapping:" RESET "\n");
+    for (size_t i = 0; i < global_scope->symbols_list.count; i++) {
+        Symbol *sym = *(Symbol**)dynarray_get(&global_scope->symbols_list, i);
+        if (!sym) continue;
 
-    size_t func_count = program->data.program.decls->count;
-    for (size_t i = 0; i < func_count; i++) {
-        AstNode *func_decl = *(AstNode **)dynarray_get(program->data.program.decls, i);
-        if (!func_decl || func_decl->node_type != AST_FUNCTION_DECLARATION) continue;
+        const char *name = safe_symbol_name(sym->name_rec);
+        
+        // Header: Symbol Name and Kind
+        printf("  " BOLD "%s" RESET " " DIM "[%s]" RESET, name, symbol_kind_to_str(sym->kind));
 
-        print_symbol_info(func_decl);
-        print_function_type_info(func_decl);
+        // Modifiers
+        if (sym->is_pub) printf(GREEN " pub" RESET);
+        if (sym->flags & SYMBOL_FLAG_CONST) printf(YELLOW " const" RESET);
+        printf("\n");
+
+        // Internal Pointer
+        printf("    symbol ptr: " DIM "%p" RESET "\n", (void *)sym->name_rec);
+
+        // Type Information
+        if (sym->type) {
+            printf("    type:   ");
+            type_print_internal(stdout, sym->type);
+            printf("\n");
+            
+            // Nested Fields (For Structs)
+            if (sym->type->kind == TYPE_STRUCT && sym->kind == SYMBOL_VALUE_TYPE) {
+                printf("    fields:\n");
+                for (size_t f = 0; f < sym->type->as.struct_type.field_count; f++) {
+                    StructField *field = &sym->type->as.struct_type.fields[f];
+                    printf("      - %s: ", safe_symbol_name(field->name));
+                    type_print_internal(stdout, field->type);
+                    printf(" %s(%s)" RESET "\n", get_kind_color(field->type), get_kind_name(field->type));
+                }
+            }
+            
+            // Detailed Function Breakdown
+            if (sym->type->kind == TYPE_FUNCTION) {
+                size_t param_count = sym->type->as.func.param_count;
+                printf("    params (%zu):\n", param_count);
+
+                for (size_t p = 0; p < param_count; p++) {
+                    Type *param_type = sym->type->as.func.params[p];
+                    printf("      param[%zu]: ", p);
+                    type_print_internal(stdout, param_type);
+                    printf(" %s(%s)" RESET "\n", get_kind_color(param_type), get_kind_name(param_type));
+                }
+
+                Type *return_type = sym->type->as.func.return_type;
+                if (return_type) {
+                    printf("    return: ");
+                    type_print_internal(stdout, return_type);
+                    printf(" %s(%s)" RESET "\n", get_kind_color(return_type), get_kind_name(return_type));
+                }
+            }
+        } else if (sym->kind != SYMBOL_VALUE_MODULE && sym->kind != SYMBOL_VALUE_ALIAS) {
+            printf("    type:   " COL_PTR "none" RESET "\n");
+        }
+
+        // Aliasing Information
+        if (sym->kind == SYMBOL_VALUE_ALIAS && sym->target_symbol) {
+             printf("    target: " CYAN "%s" RESET "\n", safe_symbol_name(sym->target_symbol->name_rec));
+        }
+
+        // Computed Constant Values
+        if (sym->flags & SYMBOL_FLAG_COMPUTED_VALUE) {
+            if (type_is_integer(sym->type)) {
+                printf("    value:  " YELLOW "%lld" RESET "\n", (long long)sym->value.int_val);
+            } else if (type_is_float(sym->type)) {
+                printf("    value:  " YELLOW "%f" RESET "\n", sym->value.float_val);
+            }
+        }
+
+        // Module Path Info
+        if (sym->kind == SYMBOL_VALUE_MODULE && sym->filename) {
+            printf("    path:   " DIM "%s" RESET "\n", sym->filename);
+        }
+
         printf("\n");
     }
-
-    printf("\n");
 }

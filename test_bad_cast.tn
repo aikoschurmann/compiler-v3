@@ -1,6 +1,0 @@
-fn main() {
-    x: i32 = 1;
-    if (x) {
-        print("x is true?\n");
-    }
-}

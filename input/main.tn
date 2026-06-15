@@ -1,13 +1,14 @@
 import std;
 
+alias Allocator = std.mem.Allocator;
 
-struct Node {
+pub struct Node {
     val: i32;
     next: *Node;
 }
 
 fn main() -> i64 {
-    a: std.mem.Allocator = std.heap.c_allocator;
+    a: Allocator = std.heap.c_allocator;
 
     head: *Node = 0 as *Node;
     curr: *Node = 0 as *Node;

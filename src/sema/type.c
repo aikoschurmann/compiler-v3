@@ -97,7 +97,6 @@ static int type_comparator(void *a, void *b) {
             return (ta->as.primitive == tb->as.primitive) ? 0 : 1;
 
         case TYPE_POINTER:
-            // CRITICAL OPTIMIZATION:
             // We only compare the 'target' pointer addresses.
             // Since 'target' is already interned, ta->target == tb->target
             // implies they are the exact same type. We do NOT need to recurse.

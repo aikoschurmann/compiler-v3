@@ -1,6 +1,6 @@
 #include "codegen_internal.h"
 
-static LLVMValueRef codegen_materialize_slice(CodegenContext *ctx, LLVMValueRef val, Type *src_type, Type *dst_type) {
+LLVMValueRef codegen_materialize_slice(CodegenContext *ctx, LLVMValueRef val, Type *src_type, Type *dst_type) {
     size_t n = src_type->as.array.size;
     Type *src_inner = src_type->as.array.base;
     Type *dst_inner = dst_type->as.slice.base;
@@ -79,18 +79,9 @@ LLVMValueRef codegen_expr_ops(CodegenContext *ctx, AstNode *expr) {
                 if (src_base->kind == TYPE_ARRAY && dst_base->kind == TYPE_SLICE) {
                     
                     LLVMTypeRef slice_ty = get_llvm_type(ctx, dst_base);
+                    LLVMValueRef slice_val = codegen_materialize_slice(ctx, val, src_base, dst_base);
                     LLVMValueRef slice_alloca = LLVMBuildAlloca(ctx->builder, slice_ty, "temp_slice_ptr_cast");
-
-                    // 1. Data Pointer
-                    LLVMTypeRef elem_ptr_ty = LLVMStructGetTypeAtIndex(slice_ty, 0);
-                    LLVMValueRef data_ptr = LLVMBuildBitCast(ctx->builder, val, elem_ptr_ty, "array_decay");
-                    LLVMValueRef data_ptr_gep = LLVMBuildStructGEP2(ctx->builder, slice_ty, slice_alloca, 0, "data_gep");
-                    LLVMBuildStore(ctx->builder, data_ptr, data_ptr_gep);
-
-                    // 2. Length
-                    LLVMValueRef len = LLVMConstInt(LLVMInt64TypeInContext(ctx->context), (unsigned long long)src_base->as.array.size, 0);
-                    LLVMValueRef len_gep = LLVMBuildStructGEP2(ctx->builder, slice_ty, slice_alloca, 1, "len_gep");
-                    LLVMBuildStore(ctx->builder, len, len_gep);
+                    LLVMBuildStore(ctx->builder, slice_val, slice_alloca);
 
                     return slice_alloca;
                 }

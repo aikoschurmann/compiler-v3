@@ -106,6 +106,12 @@ int main(int argc, char **argv) {
         }
     }
 
+    if (opts.print_types) {
+        // Pass the unit's GLOBAL SCOPE instead of the AST
+        CompilationUnit *main_unit = *(CompilationUnit**)dynarray_get(loader->units_ordered, loader->units_ordered->count - 1);
+        type_print_store_dump(store, main_unit->global_scope); 
+    }
+
     // Check for Semantic Errors
     if (type_ctx.errors->count > 0) {
         for (size_t i = 0; i < type_ctx.errors->count; i++) {

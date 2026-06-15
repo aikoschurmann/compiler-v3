@@ -115,5 +115,3 @@ bool type_is_float(Type *t);
 bool type_is_bool(Type *t);
 // Returns true if the type is a char
 bool type_is_char(Type *t);
-// Returns true if 'source' can be implicitly promoted to 'target'
-bool type_can_implicit_cast(Type *target, Type *source);
