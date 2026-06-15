@@ -70,3 +70,21 @@ CODEGEN_EXIT("struct_literal_address",
     "fn main() -> i32 {\n"
     "    return get_x(&Point{x: 15, y: 25});\n"
     "}", 15)
+
+CODEGEN_EXIT("method_call_basic",
+    "struct S { x: i32; }\n"
+    "fn S.get_x(self: *S) -> i32 { return self.x; }\n"
+    "fn S.set_x(self: *S, val: i32) { self.x = val; }\n"
+    "fn main() -> i32 {\n"
+    "    s: S = S{x: 10};\n"
+    "    s.set_x(42);\n"
+    "    return s.get_x();\n"
+    "}", 42)
+
+CODEGEN_EXIT("method_call_static",
+    "struct S { x: i32; }\n"
+    "fn S.new(val: i32) -> S { return S{x: val}; }\n"
+    "fn main() -> i32 {\n"
+    "    s: S = S.new(100);\n"
+    "    return s.x;\n"
+    "}", 100)

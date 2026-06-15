@@ -69,6 +69,7 @@ struct Type {
             StructField *fields;
             size_t field_count;
             HashMap *field_map;
+            HashMap *methods; // Maps InternResult* (method name) -> Symbol* (the method)
         } struct_type;
 
         // TYPE_ENUM

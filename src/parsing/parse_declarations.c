@@ -448,7 +448,27 @@ AstNode *parse_function_declaration(Parser *p, ParseError *err) {
     /* name */
     Token *name_tok = consume(p, TOK_IDENTIFIER);
     if (!name_tok) { create_parse_error(err, p, "expected function name", current_token(p)); return NULL; }
+
+    AstNode *target_type = NULL;
+    Token *dot_tok = current_token(p);
+
+    if (dot_tok && dot_tok->type == TOK_DOT) {
+        consume(p, TOK_DOT);
+        
+        // The first token was actually the target struct name
+        target_type = new_node_or_err(p, AST_IDENTIFIER, err, "out of memory creating target type identifier node");
+        if (!target_type) return NULL;
+
+        target_type->data.identifier.intern_result = name_tok->record;
+        target_type->span = name_tok->span;
+        
+        // Now consume the actual method name
+        name_tok = consume(p, TOK_IDENTIFIER);
+        if (!name_tok) { create_parse_error(err, p, "expected method name after '.'", current_token(p)); return NULL; }
+    }
+
     func_decl->data.function_declaration.intern_result = name_tok->record;
+    func_decl->data.function_declaration.target_type_node = target_type;
 
     /* parameters */
     if (!consume(p, TOK_LPAREN)) { create_parse_error(err, p, "expected '(' after function name", current_token(p)); return NULL; }

@@ -40,24 +40,23 @@ static void validate_allocator_struct(TypeCheckContext *ctx, Scope *global_scope
         return;
     }
 
-    const char *expected_fields[] = {"ctx", "alloc", "free"};
+    const char *expected_fields[] = {"ctx", "_alloc", "_free"};
     for (int i = 0; i < 3; i++) {
         StructField *field = &t->as.struct_type.fields[i];
         if (!field->name || !field->name->key) {
-             TypeError err = { .kind = TE_INCOMPLETE_TYPE, .span = sym->decl_node->span, .filename = ctx->filename, 
+             TypeError err = { .kind = TE_INCOMPLETE_TYPE, .span = sym->decl_node->span, .filename = ctx->filename,
                               .as.name.name = "Allocator struct fields must have names" };
             dynarray_push_value(ctx->errors, &err);
             return;
         }
         Slice *field_name = (Slice*)field->name->key;
         if (strncmp(field_name->ptr, expected_fields[i], field_name->len) != 0 || expected_fields[i][field_name->len] != '\0') {
-            TypeError err = { .kind = TE_INCOMPLETE_TYPE, .span = sym->decl_node->span, .filename = ctx->filename, 
-                              .as.name.name = "Allocator struct fields must be named: ctx, alloc, free" };
+            TypeError err = { .kind = TE_INCOMPLETE_TYPE, .span = sym->decl_node->span, .filename = ctx->filename,
+                              .as.name.name = "Allocator struct fields must be named: ctx, _alloc, _free" };
             dynarray_push_value(ctx->errors, &err);
             return;
         }
     }
-    
     // 3. Signature checks
     StructField *ctx_field = &t->as.struct_type.fields[0];
     StructField *alloc_field = &t->as.struct_type.fields[1];
@@ -456,6 +455,9 @@ static void register_program_functions(TypeCheckContext *ctx, Scope *global_scop
         ctx->filename = decl->filename;
         AstFunctionDeclaration *func = &decl->data.function_declaration;
 
+        // Methods are registered later, in a separate pass
+        if (func->target_type_node) continue;
+
         if (func->intern_result && !scope_lookup_symbol_local(global_scope, func->intern_result)) {
             define_symbol_or_error(ctx, global_scope, func->intern_result, NULL, SYMBOL_VALUE_FUNCTION, decl->span, func->is_pub, decl->filename, decl);
         }
@@ -502,8 +504,9 @@ static void resolve_program_structs(TypeCheckContext *ctx, Scope *global_scope) 
 
         struct_type->as.struct_type.fields = arena_alloc(ctx->store->arena, sizeof(StructField) * struct_type->as.struct_type.field_count);
         
-        // Initialize field_map
+        // Initialize field_map and methods map
         struct_type->as.struct_type.field_map = hashmap_create(struct_type->as.struct_type.field_count);
+        struct_type->as.struct_type.methods   = hashmap_create(4); 
 
         for (size_t j = 0; j < struct_type->as.struct_type.field_count; j++) {
             AstFieldDecl *fdecl = (AstFieldDecl*)dynarray_get(struct_decl->fields, j);
@@ -569,11 +572,53 @@ static void resolve_program_functions(TypeCheckContext *ctx, Scope *global_scope
         ctx->filename = decl->filename;
         AstFunctionDeclaration *func = &decl->data.function_declaration;
 
+        // Skip methods, they are resolved separately
+        if (func->target_type_node) continue;
+
         resolve_function_decl(ctx, global_scope, decl);
         Symbol *sym = scope_lookup_symbol_local(global_scope, func->intern_result);
         if (sym) {
             sym->type = decl->type;
         }
+    }
+}
+
+static void resolve_program_methods(TypeCheckContext *ctx, Scope *global_scope) {
+    if (!ctx || !ctx->program) return;
+    AstProgram *program = &ctx->program->data.program;
+    if (!program->decls) return;
+
+    for (size_t i = 0; i < program->decls->count; i++) {
+        AstNode *decl = *(AstNode**)dynarray_get(program->decls, i);
+        if (!decl || decl->node_type != AST_FUNCTION_DECLARATION) continue;
+
+        AstFunctionDeclaration *func = &decl->data.function_declaration;
+        if (!func->target_type_node) continue;
+
+        ctx->filename = decl->filename;
+
+        // 1. Resolve target struct type
+        Type *target_type = resolve_ast_type(ctx, global_scope, func->target_type_node);
+        if (!target_type || target_type->kind != TYPE_STRUCT) {
+            TypeError err = { .kind = TE_UNDECLARED, .span = func->target_type_node->span, .filename = ctx->filename };
+            err.as.name.name = "Method must be bound to a struct type";
+            dynarray_push_value(ctx->errors, &err);
+            continue;
+        }
+
+        // 2. Resolve method signature
+        resolve_function_decl(ctx, global_scope, decl);
+
+        // 3. Register in struct's method map
+        Symbol *sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+        sym->name_rec = func->intern_result;
+        sym->type = decl->type;
+        sym->kind = SYMBOL_VALUE_FUNCTION;
+        sym->decl_node = decl;
+        sym->is_pub = func->is_pub;
+        sym->filename = decl->filename;
+
+        hashmap_put(target_type->as.struct_type.methods, func->intern_result->key, sym, ptr_hash, ptr_cmp);
     }
 }
 
@@ -1057,6 +1102,7 @@ void typecheck_program(TypeCheckContext *ctx) {
         resolve_program_structs(ctx, unit->global_scope);
         resolve_program_globals(ctx, unit->global_scope);
         resolve_program_functions(ctx, unit->global_scope);
+        resolve_program_methods(ctx, unit->global_scope);
         unit->signatures_resolved = true;
     }
 

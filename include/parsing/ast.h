@@ -105,8 +105,9 @@ typedef struct {
 } AstVariableDeclaration;
 
 typedef struct {
-    AstNode *return_type;    /* AstNode of AST_TYPE */
+    AstNode *return_type;    /* AST_TYPE node, may be NULL */
     InternResult *intern_result;  /* interned record for the function name */
+    AstNode *target_type_node; /* AST_IDENTIFIER node for the struct this method is bound to (Optional) */
     DynArray *params;        /* AstParam nodes */
     AstNode *body;           /* AstBlock, may be NULL for @link */
     InternResult *link_name; /* Optional: for @link("name") */
@@ -199,7 +200,7 @@ typedef struct { AstNode *expr; OpKind op; } AstPostfixExpr;
 typedef struct { AstNode *lvalue; AstNode *rvalue; OpKind op; } AstAssignmentExpr;
 typedef struct { AstNode *callee; DynArray *args; } AstCallExpr;
 typedef struct { AstNode *target; AstNode *index; } AstSubscriptExpr;
-typedef struct { AstNode *target; InternResult *member; Symbol *symbol; } AstMemberExpr;
+typedef struct { AstNode *target; InternResult *member; Symbol *symbol; bool is_instance_method; } AstMemberExpr;
 
 typedef struct {
     InternResult *name; // The field name

@@ -319,7 +319,64 @@ Type* check_call_expr(TypeCheckContext *ctx, Scope *scope, AstNode *expr) {
     }
 
     // =========================================================================
-    // 3. ARGUMENT VALIDATION
+    // 3. METHOD SELF INJECTION
+    // =========================================================================
+    if (call->callee->node_type == AST_MEMBER_EXPR) {
+        AstMemberExpr *mem = &call->callee->data.member_expr;
+        if (mem->is_instance_method && callee_type->as.func.param_count > 0) {
+            Type *first_param_type = callee_type->as.func.params[0];
+            Type *target_type = mem->target->type;
+
+            // Check if first_param is compatible with target_type (or its pointer/base)
+            Type *underlying_target = target_type;
+            if (underlying_target->kind == TYPE_POINTER) underlying_target = underlying_target->as.ptr.base;
+            
+            Type *underlying_param = first_param_type;
+            if (underlying_param->kind == TYPE_POINTER) underlying_param = underlying_param->as.ptr.base;
+
+            if (underlying_target == underlying_param) {
+                // It's an instance method call! Inject 'self'.
+                AstNode *self_arg = mem->target;
+
+                // Auto-ref: target is S, param is *S
+                if (target_type->kind != TYPE_POINTER && first_param_type->kind == TYPE_POINTER) {
+                    AstNode *ref = ast_create_node(AST_UNARY_EXPR, ctx->store->arena, ctx->filename);
+                    ref->span = self_arg->span;
+                    ref->data.unary_expr.op = OP_ADDRESS;
+                    ref->data.unary_expr.expr = self_arg;
+                    
+                    Type proto = { .kind = TYPE_POINTER, .as.ptr.base = target_type };
+                    InternResult *res = intern_type(ctx->store, &proto);
+                    ref->type = (Type*)((Slice*)res->key)->ptr;
+                    self_arg = ref;
+                }
+                // Auto-deref: target is *S, param is S
+                else if (target_type->kind == TYPE_POINTER && first_param_type->kind != TYPE_POINTER) {
+                    AstNode *deref = ast_create_node(AST_UNARY_EXPR, ctx->store->arena, ctx->filename);
+                    deref->span = self_arg->span;
+                    deref->data.unary_expr.op = OP_DEREF;
+                    deref->data.unary_expr.expr = self_arg;
+                    deref->type = target_type->as.ptr.base;
+                    self_arg = deref;
+                }
+
+                if (!call->args) {
+                    call->args = arena_alloc(ctx->store->arena, sizeof(DynArray));
+                    dynarray_init_in_arena(call->args, ctx->store->arena, sizeof(AstNode*), 2);
+                }
+                
+                dynarray_push_ptr(call->args, NULL);
+                AstNode **data = (AstNode**)call->args->data;
+                if (call->args->count > 1) {
+                    memmove(&data[1], &data[0], (call->args->count - 1) * sizeof(AstNode*));
+                }
+                data[0] = self_arg;
+            }
+        }
+    }
+
+    // =========================================================================
+    // 4. ARGUMENT VALIDATION
     // =========================================================================
     size_t param_count = callee_type->as.func.param_count;
     size_t arg_count = call->args ? call->args->count : 0;
@@ -1078,13 +1135,31 @@ static Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *exp
             }
 
         case TYPE_STRUCT: {
-            // Find the field
+            // 1. Find the field
             for (size_t i = 0; i < underlying->as.struct_type.field_count; i++) {
                 if (underlying->as.struct_type.fields[i].name == member_expr->member) {
                     return underlying->as.struct_type.fields[i].type;
                 }
             }
             
+            // 2. Find the method
+            Symbol *method_sym = hashmap_get(underlying->as.struct_type.methods, member_expr->member->key, ptr_hash, ptr_cmp);
+            if (method_sym) {
+                member_expr->symbol = method_sym;
+                
+                // Determine if this is an instance call or a static call
+                // It's an instance call if the target is NOT a type name.
+                bool target_is_type = false;
+                if (member_expr->target->node_type == AST_IDENTIFIER) {
+                    Symbol *s = member_expr->target->data.identifier.symbol;
+                    if (s && s->kind == SYMBOL_VALUE_TYPE) target_is_type = true;
+                }
+                
+                member_expr->is_instance_method = !target_is_type;
+                expr->type = method_sym->type;
+                return expr->type;
+            }
+
             const char *field_name = "<unknown>";
             if (member_expr->member && member_expr->member->key) {
                 field_name = ((Slice*)member_expr->member->key)->ptr;
@@ -1098,7 +1173,13 @@ static Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *exp
 
         default:
             {
-                TypeError err = { .kind = TE_NOT_MEMBER_ACCESSIBLE, .span = member_expr->target->span, .filename = ctx->filename, .as.bad_usage.actual = target_type };
+                const char *field_name = "<unknown>";
+                if (member_expr->member && member_expr->member->key) {
+                    field_name = ((Slice*)member_expr->member->key)->ptr;
+                }
+                TypeError err = { .kind = TE_FIELD_ACCESS, .span = expr->span, .filename = ctx->filename };
+                err.as.field.name = field_name;
+                err.as.field.type = target_type;
                 dynarray_push_value(ctx->errors, &err);
                 return NULL;
             }
