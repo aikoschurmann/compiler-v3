@@ -1,6 +1,7 @@
 #include "parser.h"
 #include <stdio.h>
 #include "lexer.h"
+#include "colors.h"
 
 Parser *parser_create(DynArray *tokens, char *filename, Arena *arena) {
     if (!arena) return NULL;
@@ -88,12 +89,6 @@ DynArray *alloc_dynarray(Parser *p, ParseError *err, size_t elem_size, int initi
 }
 
 
-// === ANSI colors for nicer output ===
-#define RED     "\x1b[31m"
-#define CYAN    "\x1b[36m"
-#define BOLD    "\x1b[1m"
-#define RESET   "\x1b[0m"
-#define YELLOW  "\x1b[33m"
 
 // Use shared source excerpt helpers
 #include "file.h"

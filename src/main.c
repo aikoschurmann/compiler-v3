@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
     
     // Metric tracking
     long peak_rss_before_kb = get_peak_rss_kb();
+    (void)peak_rss_before_kb;
     double t_start = now_seconds();
 
     // 2. Initialize Core Resources
@@ -95,6 +96,7 @@ int main(int argc, char **argv) {
     double t4 = now_seconds();
     double t_sema = t4 - t3;
     size_t mem_sema = arena_total_allocated(arena) - mem_before_sema;
+    (void)mem_sema;
 
     // Reporting
     if (opts.print_ast) {
