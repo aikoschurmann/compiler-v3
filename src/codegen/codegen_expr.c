@@ -45,7 +45,7 @@ static LLVMValueRef codegen_expr_intrinsic(CodegenContext *ctx, AstNode *expr) {
         // 3. Extract Context and Function Pointer from Allocator Interface
         size_t ctx_idx, alloc_idx;
         if (!struct_field_index(allocator_arg->type, "ctx", &ctx_idx) || 
-            !struct_field_index(allocator_arg->type, "alloc", &alloc_idx)) {
+            !struct_field_index(allocator_arg->type, "_alloc", &alloc_idx)) {
             ICE("@alloc allocator missing required fields");
         }
 
@@ -69,7 +69,7 @@ static LLVMValueRef codegen_expr_intrinsic(CodegenContext *ctx, AstNode *expr) {
         // Extract Context and Free Function
         size_t ctx_idx, free_idx;
         if (!struct_field_index(allocator_arg->type, "ctx", &ctx_idx) || 
-            !struct_field_index(allocator_arg->type, "free", &free_idx)) {
+            !struct_field_index(allocator_arg->type, "_free", &free_idx)) {
             ICE("@free allocator missing required fields");
         }
 
@@ -121,6 +121,14 @@ static LLVMValueRef codegen_expr_member(CodegenContext *ctx, AstNode *expr) {
     // Array fields (rare) decay to pointers
     if (expr->type->kind == TYPE_ARRAY) {
         return lval;
+    }
+
+    // Function-pointer FIELDS are different from named functions: the GEP gives
+    // us the address of the slot holding the fn ptr, so we must do one explicit
+    // load to get the actual callable pointer out.
+    if (expr->type->kind == TYPE_FUNCTION) {
+        LLVMTypeRef ptr_ty = LLVMPointerType(LLVMInt8TypeInContext(ctx->context), 0);
+        return LLVMBuildLoad2(ctx->builder, ptr_ty, lval, "fn_ptr");
     }
 
     // Load standard member variables from their resolved pointer
