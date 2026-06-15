@@ -67,9 +67,8 @@ typedef struct Symbol {
 } Symbol;
 
 typedef struct Scope {
-    // array of symbols
+    // array of symbols indexed by InternResult dense index for O(1) lookup
     Symbol **symbols;
-    size_t symbol_count;
     size_t capacity; // Size of the symbols array
     DynArray symbols_list; // For efficient iteration
 

@@ -70,7 +70,6 @@ Symbol *scope_define_symbol(Scope *scope, InternResult *rec, Type *type, SymbolV
     symbol->module_scope = NULL;
 
     scope->symbols[rec->entry->dense_index] = symbol;
-    scope->symbol_count++;
     
     dynarray_push_value(&scope->symbols_list, &symbol);
 
@@ -155,7 +154,7 @@ Symbol *symbol_set_value_bool(Symbol *symbol, bool value){
 
 size_t scope_get_symbol_count(Scope *scope){
     if (!scope) return 0;
-    return scope->symbol_count;
+    return scope->symbols_list.count;
 }
 
 void scope_set_flags(Scope *scope, InternResult *rec, int flags){
