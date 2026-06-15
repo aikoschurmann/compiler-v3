@@ -10,15 +10,15 @@ pub struct Node {
 fn main() -> i64 {
     a: Allocator = std.heap.c_allocator;
 
-    head: *Node = 0 as *Node;
-    curr: *Node = 0 as *Node;
+    head: *Node = null;
+    curr: *Node = null;
 
     for (i: i32 = 1; i <= 5; i = i + 1) {
         node: *Node = @alloc(Node, a, 1);
         node.val = i * 10;
-        node.next = 0 as *Node;
+        node.next = null;
 
-        if head == (0 as *Node) {
+        if head == null {
             head = node;
             curr = node;
         } else {
@@ -32,7 +32,7 @@ fn main() -> i64 {
     print("Processing heap LL:\n");
 
     curr = head;
-    while curr != (0 as *Node) {
+    while curr != null {
         sqr_val: f64 = (curr.val * curr.val) as f64;
         
         println(sqr_val);
@@ -50,7 +50,7 @@ fn main() -> i64 {
 
 // Recursive function to clear the heap memory
 fn free_list(a: std.mem.Allocator, n: *Node) {
-    if n == (0 as *Node) {
+    if n == null {
         return;
     }
     

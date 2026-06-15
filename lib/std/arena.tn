@@ -12,7 +12,7 @@ pub fn arena_alloc_impl(ctx: *void, size: i64) -> *void {
     
     // Check for Out-Of-Memory
     if (arena.offset + size) > arena.capacity {
-        return 0 as *void; 
+        return null; 
     }
     
     // Bump the pointer

@@ -10,7 +10,7 @@ pub fn c_free_impl(ctx: *void, ptr: *void) -> void {
 }
 
 pub const c_allocator: std.mem.Allocator = std.mem.Allocator {
-    ctx: 0 as *void,
+    ctx: null,
     alloc: c_alloc_impl,
     free: c_free_impl
 };
