@@ -155,8 +155,10 @@ LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
         else if (underlying->kind == TYPE_STRUCT) {
             LLVMTypeRef struct_ty = get_llvm_type(ctx, underlying);
             // Dynamic index lookup for safety against struct layout changes (PS-1 Fix)
-            size_t idx = get_struct_field_index(underlying, mem_expr->member);
-            if (idx == (size_t)-1) ICE_AT(expr, "Field index not found in codegen");
+            size_t idx;
+            if (!get_struct_field_index(underlying, mem_expr->member, &idx)) {
+                ICE_AT(expr, "Field index not found in codegen");
+            }
             return LLVMBuildStructGEP2(ctx->builder, struct_ty, target_lvalue, (unsigned)idx, "field_gep");
         }
 

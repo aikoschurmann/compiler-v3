@@ -47,22 +47,24 @@ char* mangle_name(CodegenContext *ctx, CompilationUnit *unit, InternResult *symb
     return mangled;
 }
 
-size_t struct_field_index(Type *struct_type, const char *field_name) {
+bool struct_field_index(Type *struct_type, const char *field_name, size_t *out_index) {
     
     for (size_t i = 0; i < struct_type->as.struct_type.field_count; i++) {
         Slice *name = (Slice*)struct_type->as.struct_type.fields[i].name->key;
         if (name->len == strlen(field_name) && memcmp(name->ptr, field_name, name->len) == 0) {
-            return i;
+            if (out_index) *out_index = i;
+            return true;
         }
     }
-    return (size_t)-1;
+    return false;
 }
 
-size_t get_struct_field_index(Type *struct_type, InternResult *field_name) {
+bool get_struct_field_index(Type *struct_type, InternResult *field_name, size_t *out_index) {
     for (size_t i = 0; i < struct_type->as.struct_type.field_count; i++) {
         if (struct_type->as.struct_type.fields[i].name == field_name) {
-            return i;
+            if (out_index) *out_index = i;
+            return true;
         }
     }
-    return (size_t)-1;
+    return false;
 }

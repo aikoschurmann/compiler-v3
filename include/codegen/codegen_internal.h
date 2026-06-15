@@ -61,7 +61,7 @@ LLVMValueRef codegen_load_value(CodegenContext *ctx, LLVMValueRef ptr, Type *typ
 LLVMValueRef codegen_materialize_slice(CodegenContext *ctx, LLVMValueRef val, Type *src_type, Type *dst_type);
 LLVMValueRef create_entry_block_alloca(CodegenContext *ctx, LLVMTypeRef ty, const char *name);
 char*        mangle_name(CodegenContext *ctx, CompilationUnit *unit, InternResult *symbol_name);
-size_t       struct_field_index(Type *struct_type, const char *field_name);
+bool         struct_field_index(Type *struct_type, const char *field_name, size_t *out_index);
 LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr);
 LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr);
 void         codegen_statement(CodegenContext *ctx, AstNode *stmt);

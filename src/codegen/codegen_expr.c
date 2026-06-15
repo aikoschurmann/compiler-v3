@@ -43,9 +43,11 @@ static LLVMValueRef codegen_expr_intrinsic(CodegenContext *ctx, AstNode *expr) {
             LLVMSizeOf(llvm_target_type), "alloc_bytes");
 
         // 3. Extract Context and Function Pointer from Allocator Interface
-        size_t ctx_idx = struct_field_index(allocator_arg->type, "ctx");
-        size_t alloc_idx = struct_field_index(allocator_arg->type, "alloc");
-        if (ctx_idx == (size_t)-1 || alloc_idx == (size_t)-1) ICE("@alloc allocator missing required fields");
+        size_t ctx_idx, alloc_idx;
+        if (!struct_field_index(allocator_arg->type, "ctx", &ctx_idx) || 
+            !struct_field_index(allocator_arg->type, "alloc", &alloc_idx)) {
+            ICE("@alloc allocator missing required fields");
+        }
 
         LLVMValueRef ctx_val = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)ctx_idx, "ctx_val");
         LLVMValueRef alloc_fn = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)alloc_idx, "alloc_fn_val");
@@ -65,9 +67,11 @@ static LLVMValueRef codegen_expr_intrinsic(CodegenContext *ctx, AstNode *expr) {
         LLVMValueRef ptr_val = codegen_expr(ctx, ptr_arg);
 
         // Extract Context and Free Function
-        size_t ctx_idx = struct_field_index(allocator_arg->type, "ctx");
-        size_t free_idx = struct_field_index(allocator_arg->type, "free");
-        if (ctx_idx == (size_t)-1 || free_idx == (size_t)-1) ICE("@free allocator missing required fields");
+        size_t ctx_idx, free_idx;
+        if (!struct_field_index(allocator_arg->type, "ctx", &ctx_idx) || 
+            !struct_field_index(allocator_arg->type, "free", &free_idx)) {
+            ICE("@free allocator missing required fields");
+        }
 
         LLVMValueRef ctx_val = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)ctx_idx, "ctx_val");
         LLVMValueRef free_fn = LLVMBuildExtractValue(ctx->builder, allocator_val, (unsigned)free_idx, "free_fn_val");
@@ -138,8 +142,10 @@ static LLVMValueRef codegen_expr_struct_literal(CodegenContext *ctx, AstNode *ex
             AstFieldInit *init = (AstFieldInit*)dynarray_get(lit->fields, i);
             
             // DYNAMIC LAYOUT RESOLUTION (Fix for PS-1)
-            size_t idx = get_struct_field_index(expr->type, init->name);
-            if (idx == (size_t)-1) ICE_AT(expr, "Field index not found in codegen");
+            size_t idx;
+            if (!get_struct_field_index(expr->type, init->name, &idx)) {
+                ICE_AT(expr, "Field index not found in codegen");
+            }
             
             fields[idx] = codegen_expr(ctx, init->expr);
         }
@@ -156,8 +162,10 @@ static LLVMValueRef codegen_expr_struct_literal(CodegenContext *ctx, AstNode *ex
         LLVMValueRef field_val = codegen_expr(ctx, init->expr);
         
         // DYNAMIC LAYOUT RESOLUTION (Fix for PS-1)
-        size_t idx = get_struct_field_index(expr->type, init->name);
-        if (idx == (size_t)-1) ICE_AT(expr, "Field index not found in codegen");
+        size_t idx;
+        if (!get_struct_field_index(expr->type, init->name, &idx)) {
+            ICE_AT(expr, "Field index not found in codegen");
+        }
         
         val = LLVMBuildInsertValue(ctx->builder, val, field_val, (unsigned)idx, "struct_init");
     }
@@ -205,21 +213,35 @@ static LLVMValueRef codegen_expr_subscript(CodegenContext *ctx, AstNode *expr) {
 // =============================================================================
 
 static LLVMValueRef codegen_const_value(CodegenContext *ctx, Type *type, ConstValue *val) {
-    if (val->type == STRING_LITERAL) {
-         return LLVMBuildGlobalStringPtr(ctx->builder, ((Slice*)val->value.string_val->key)->ptr, "str_lit");
+    switch (val->type) {
+        case STRING_LITERAL:
+            return LLVMBuildGlobalStringPtr(ctx->builder, ((Slice*)val->value.string_val->key)->ptr, "str_lit");
+        
+        case INT_LITERAL: {
+            LLVMTypeRef llvm_type = get_llvm_type(ctx, type);
+            if (LLVMGetTypeKind(llvm_type) == LLVMPointerTypeKind) {
+                LLVMTypeRef i64ty = LLVMInt64TypeInContext(ctx->context);
+                LLVMValueRef int_val = LLVMConstInt(i64ty, (unsigned long long)val->value.int_val, 0);
+                return LLVMConstIntToPtr(int_val, llvm_type);
+            }
+            return LLVMConstInt(llvm_type, (unsigned long long)val->value.int_val, 0);
+        }
+            
+        case FLOAT_LITERAL:
+            return LLVMConstReal(get_llvm_type(ctx, type), val->value.float_val);
+            
+        case BOOL_LITERAL:
+            return LLVMConstInt(get_llvm_type(ctx, type), val->value.bool_val ? 1 : 0, 0);
+            
+        case CHAR_LITERAL:
+            return LLVMConstInt(get_llvm_type(ctx, type), (unsigned long long)val->value.char_val, 0);
+            
+        case NULL_LITERAL:
+            return LLVMConstNull(get_llvm_type(ctx, type));
+            
+        default:
+            ICE("Unsupported constant LiteralType in codegen_const_value: %d", val->type);
     }
-
-    if (type_is_integer(type)) return LLVMConstInt(get_llvm_type(ctx, type), (unsigned long long)val->value.int_val, 0);
-    if (type_is_float(type))   return LLVMConstReal(get_llvm_type(ctx, type), val->value.float_val);
-    if (type_is_bool(type))    return LLVMConstInt(get_llvm_type(ctx, type), val->value.bool_val ? 1 : 0, 0);
-    if (type_is_char(type))    return LLVMConstInt(get_llvm_type(ctx, type), (unsigned long long)val->value.char_val, 0);
-    
-    if (type->kind == TYPE_POINTER) {
-        LLVMTypeRef ptr_ty = get_llvm_type(ctx, type);
-        if (val->value.int_val == 0) return LLVMConstNull(ptr_ty);
-        return LLVMConstIntToPtr(LLVMConstInt(LLVMInt64TypeInContext(ctx->context), (unsigned long long)val->value.int_val, 0), ptr_ty);
-    }
-    return NULL;
 }
 
 LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr) {
