@@ -320,9 +320,9 @@ void lexer_populate_default_keywords(DenseArenaInterner *keywords) {
 Lexer* lexer_create(const char *source, size_t source_len, Arena *arena) {
     if (!source || !arena) return NULL;
 
-    DenseArenaInterner *keywords = intern_table_create(hashmap_create(32), arena, string_copy_func, slice_hash, slice_cmp);
-    DenseArenaInterner *identifiers = intern_table_create(hashmap_create(128), arena, string_copy_func, slice_hash, slice_cmp);
-    DenseArenaInterner *strings = intern_table_create(hashmap_create(64), arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *keywords = intern_table_create(hashmap_create(arena, 32), arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *identifiers = intern_table_create(hashmap_create(arena, 128), arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *strings = intern_table_create(hashmap_create(arena, 64), arena, string_copy_func, slice_hash, slice_cmp);
     
     if (!keywords || !identifiers || !strings) return NULL;
 

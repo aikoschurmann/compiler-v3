@@ -89,12 +89,12 @@ ModuleLoader* module_loader_create(Arena *arena, Options *opts,
     loader->keywords = keywords;
     loader->identifiers = identifiers;
     loader->strings = strings;
-    
-    loader->units = hashmap_create(64);
-    loader->units_by_logical_path = hashmap_create(64);
+
+    loader->units = hashmap_create(arena, 64);
+    loader->units_by_logical_path = hashmap_create(arena, 64);
     loader->units_ordered = arena_alloc(arena, sizeof(DynArray));
     dynarray_init_in_arena(loader->units_ordered, arena, sizeof(CompilationUnit*), 8);
-    
+
     loader->project_root = NULL;
 
     return loader;

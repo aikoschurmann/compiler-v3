@@ -47,9 +47,9 @@ int main(int argc, char **argv) {
     }
 
     // Shared Interners
-    DenseArenaInterner *keywords = intern_table_create(hashmap_create(32), arena, string_copy_func, slice_hash, slice_cmp);
-    DenseArenaInterner *identifiers = intern_table_create(hashmap_create(256), arena, string_copy_func, slice_hash, slice_cmp);
-    DenseArenaInterner *strings = intern_table_create(hashmap_create(128), arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *keywords = intern_table_create(hashmap_create(arena, 32), arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *identifiers = intern_table_create(hashmap_create(arena, 256), arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *strings = intern_table_create(hashmap_create(arena, 128), arena, string_copy_func, slice_hash, slice_cmp);
 
     /* Pre-intern keywords */
     lexer_populate_default_keywords(keywords);

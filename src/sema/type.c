@@ -232,14 +232,14 @@ TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, Dense
     
     // Create Hashmap for the interner
     // 64 buckets is fine for initial set of types. It will grow.
-    HashMap *tm = hashmap_create(64); 
+    HashMap *tm = hashmap_create(arena, 64);
     if (!tm) return NULL;
 
     // Create Interner
     ts->type_interner = intern_table_create(tm, arena, type_copy_func, type_hasher, type_comparator);
     if (!ts->type_interner) return NULL;
 
-    ts->primitive_registry = hashmap_create(64); 
+    ts->primitive_registry = hashmap_create(arena, 64);
 
     // Create canonical primitives
     ts->t_i32 = create_primitive(ts, PRIM_I32);

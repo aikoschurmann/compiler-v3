@@ -35,7 +35,7 @@ make test     # runs the test suite
 
 Variables are declared with `name: Type = value`. Type annotations are always required.
 
-```
+```rust
 x: i32 = 10;
 pi: f64 = 3.14159;
 name: *char = "hello";
@@ -44,7 +44,7 @@ flag: bool = true;
 
 Constants are evaluated at compile time and can be used anywhere a literal is valid.
 
-```
+```rust
 const MAX: i32 = 100;
 const HALF_MAX: i32 = MAX / 2;  // constant folding
 ```
@@ -69,7 +69,7 @@ const HALF_MAX: i32 = MAX / 2;  // constant folding
 
 ### Functions
 
-```
+```rust
 fn add(a: i32, b: i32) -> i32 {
     return a + b;
 }
@@ -82,7 +82,7 @@ fn greet(name: *char) -> void {
 
 Functions can be passed as values using function pointer types:
 
-```
+```rust
 fn apply(a: i32, b: i32, op: fn(i32, i32) -> i32) -> i32 {
     return op(a, b);
 }
@@ -99,7 +99,7 @@ fn main() -> i32 {
 
 **If / else**
 
-```
+```rust
 if x > 0 {
     println("positive");
 } else if x < 0 {
@@ -111,7 +111,7 @@ if x > 0 {
 
 **While**
 
-```
+```rust
 i: i32 = 0;
 while (i < 10) {
     i = i + 1;
@@ -120,7 +120,7 @@ while (i < 10) {
 
 **For**
 
-```
+```rust
 for (i: i32 = 0; i < 10; i += 1) {
     println(i);
 }
@@ -128,7 +128,7 @@ for (i: i32 = 0; i < 10; i += 1) {
 
 **Break and continue**
 
-```
+```rust
 while true {
     if done { break; }
     if skip { continue; }
@@ -141,7 +141,7 @@ while true {
 
 Structs group fields together. Methods are regular functions with the struct type as a name prefix; `self` is an explicit pointer parameter.
 
-```
+```rust
 struct Point {
     x: f64;
     y: f64;
@@ -162,7 +162,7 @@ fn main() -> i32 {
 
 Struct fields initialise in any order, and structs can be nested:
 
-```
+```rust
 struct Color { r: i32; g: i32; b: i32; }
 struct Pixel { pos: Point; color: Color; }
 
@@ -178,7 +178,7 @@ px: Pixel = Pixel {
 
 Take the address of a variable with `&` and dereference with `*`.
 
-```
+```rust
 x: i32 = 42;
 p: *i32 = &x;
 *p = 100;       // x is now 100
@@ -186,21 +186,21 @@ p: *i32 = &x;
 
 Pointer-to-pointer:
 
-```
+```rust
 pp: **i32 = &p;
 val: i32 = **pp;  // 100
 ```
 
 Null pointers use the `null` keyword or an explicit zero cast:
 
-```
+```rust
 p: *Node = null;
 if p == null { ... }
 ```
 
 Pointer arithmetic is done through integer casts:
 
-```
+```rust
 next: *i32 = ((p as i64) + 4) as *i32;
 ```
 
@@ -212,20 +212,20 @@ Auto-deref through a pointer works on struct member access — `p.field` is shor
 
 Fixed-size arrays:
 
-```
+```rust
 nums: i32[5] = {1, 2, 3, 4, 5};
 matrix: f64[3][3];  // multidimensional
 ```
 
 The size can be inferred from the initialiser:
 
-```
+```rust
 primes: i32[] = {2, 3, 5, 7, 11};  // becomes i32[5]
 ```
 
 Arrays decay to pointers when taken by address:
 
-```
+```rust
 p: *i32 = &nums[0];
 ```
 
@@ -235,7 +235,7 @@ p: *i32 = &nums[0];
 
 Use `as` to cast between numeric types, pointers, and mixed combinations. Casts are explicit — there are no silent narrowing conversions.
 
-```
+```rust
 big: i64 = 0xFFFFFFFF0000000A;
 small: i32 = big as i32;   // truncate
 
@@ -254,7 +254,7 @@ raw: *void = &x as *void;  // pointer reinterpret
 
 `alias` binds a new name to any existing symbol — a variable, function, struct, or type. The alias and the original refer to the same thing.
 
-```
+```rust
 alias Vec2 = Point;                 // type alias
 alias origin = default_point;      // variable alias
 alias sum = add;                    // function alias
@@ -269,7 +269,7 @@ result: i32 = sum(1, 2);
 
 `defer` schedules a statement or block to run when the current scope exits, including on early returns. Deferred actions run in last-in, first-out order.
 
-```
+```rust
 fn read_file() -> i32 {
     f: *File = open("data.txt");
     defer { close(f); }       // always runs, even on early return
@@ -282,7 +282,7 @@ fn read_file() -> i32 {
 
 Defer inside loops fires on each iteration:
 
-```
+```rust
 for (i: i32 = 0; i < 3; i += 1) {
     defer { cleanup(i); }  // runs at the end of each loop body
     do_work(i);
@@ -297,7 +297,7 @@ Code is split into modules. A module is a `.tn` file; its public declarations (m
 
 **Import the whole standard library:**
 
-```
+```rust
 import std;
 
 fn main() -> i32 {
@@ -309,7 +309,7 @@ fn main() -> i32 {
 
 **Import a specific sub-module:**
 
-```
+```rust
 import std.mem;
 
 alloc: std.mem.Allocator = std.heap.allocator;
@@ -317,7 +317,7 @@ alloc: std.mem.Allocator = std.heap.allocator;
 
 **Import from a relative path:**
 
-```
+```rust
 // project/utils.tn
 pub fn clamp(x: i32, lo: i32, hi: i32) -> i32 { ... }
 
@@ -331,7 +331,7 @@ fn main() -> i32 {
 
 **Re-export:** mark an import `pub` to expose it to downstream modules.
 
-```
+```rust
 pub import .mem;
 pub import .heap;
 ```
@@ -344,7 +344,7 @@ There is no implicit allocation. All heap memory goes through an `Allocator` val
 
 **Heap allocator** — wraps `malloc`/`free`:
 
-```
+```rust
 import std;
 
 fn main() -> i32 {
@@ -357,7 +357,7 @@ fn main() -> i32 {
 
 **Arena allocator** — bump-pointer, freed all at once:
 
-```
+```rust
 import std;
 alias Arena = std.arena.Arena;
 
@@ -376,7 +376,7 @@ fn main() -> i32 {
 
 **Allocating arrays:** pass a count as the third argument to `@alloc`.
 
-```
+```rust
 buf: *i32 = @alloc(i32, std.heap.allocator, 64);
 buf[0] = 1;
 buf[63] = 2;
@@ -385,7 +385,7 @@ buf[63] = 2;
 
 **Custom allocators** implement `std.mem.Allocator`:
 
-```
+```rust
 import std.mem;
 
 pub struct Allocator {
@@ -403,7 +403,7 @@ Any struct with `ctx`, `_alloc`, and `_free` fields works as a drop-in allocator
 
 Declare an external C function with `@link` and the symbol name. No body is needed.
 
-```
+```rust
 @link("malloc")
 fn malloc(size: i64) -> *void;
 

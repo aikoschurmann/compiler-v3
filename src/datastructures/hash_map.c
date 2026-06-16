@@ -1,29 +1,36 @@
-// hash_map.c  -- corrected and defensive version
-
-#include "hash_map.h"
+#include "datastructures/hash_map.h"
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
-HashMap* hashmap_create(size_t bucket_count) {
-    if (bucket_count == 0) bucket_count = 64; // default
-    HashMap *map = calloc(1, sizeof(HashMap));
+#define TOMBSTONE ((void*)-1)
+
+HashMap* hashmap_create(Arena *arena, size_t initial_capacity) {
+    if (initial_capacity < 8) initial_capacity = 8;
+    
+    HashMap *map;
+    if (arena) {
+        map = arena_alloc(arena, sizeof(HashMap));
+    } else {
+        map = calloc(1, sizeof(HashMap));
+    }
     if (!map) return NULL;
 
-    /* calloc so each DynArray struct is zeroed (safe for dynarray_init to run). */
-    map->buckets = calloc(bucket_count, sizeof(DynArray));
-    if (!map->buckets) {
-        free(map);
+    map->arena = arena;
+    map->capacity = initial_capacity;
+    map->size = 0;
+    map->tombstones = 0;
+
+    if (arena) {
+        map->entries = arena_calloc(arena, sizeof(KeyValue) * initial_capacity);
+    } else {
+        map->entries = calloc(initial_capacity, sizeof(KeyValue));
+    }
+
+    if (!map->entries) {
+        if (!arena) free(map);
         return NULL;
     }
 
-    for (size_t i = 0; i < bucket_count; i++) {
-        /* initialize each bucket to hold KeyValue elements */
-        dynarray_init(&map->buckets[i], sizeof(KeyValue));
-    }
-
-    map->bucket_count = bucket_count;
-    map->size = 0;
     return map;
 }
 
@@ -34,73 +41,58 @@ void hashmap_destroy(
 ) {
     if (!map) return;
 
-    for (size_t i = 0; i < map->bucket_count; i++) {
-        DynArray *bucket = &map->buckets[i];
-        /* protect against uninitialized bucket */
-        if (!bucket) continue;
-        for (size_t j = 0; j < bucket->count; j++) {
-            KeyValue *kv = (KeyValue*)dynarray_get(bucket, j);
-            if (!kv) continue;
-            if (free_key) free_key(kv->key);
-            if (free_value) free_value(kv->value);
-        }
-        dynarray_free(bucket);
-    }
-    free(map->buckets);
-    free(map);
-}
-
-/* Helper: rehash into a newly allocated buckets array */
-bool hashmap_rehash(
-    HashMap* map,
-    size_t new_bucket_count,
-    size_t (*hash)(void*),
-    int (*cmp)(void*, void*)
-) {
-    if (!map || new_bucket_count == 0 || !hash || !cmp) return false;
-
-    DynArray *new_buckets = calloc(new_bucket_count, sizeof(DynArray));
-    if (!new_buckets) return false;
-
-    /* initialize new buckets */
-    for (size_t i = 0; i < new_bucket_count; i++) {
-        dynarray_init(&new_buckets[i], sizeof(KeyValue));
-    }
-
-    /* Reinsert all key-value pairs into new buckets (copy KeyValue values) */
-    for (size_t i = 0; i < map->bucket_count; i++) {
-        DynArray *bucket = &map->buckets[i];
-        if (!bucket) continue;
-        for (size_t j = 0; j < bucket->count; j++) {
-            KeyValue *old_kv = (KeyValue*)dynarray_get(bucket, j);
-            if (!old_kv) continue;
-
-            /* copy the key/value pair (value is the pointer stored in old_kv->value) */
-            KeyValue kv_copy;
-            kv_copy.key = old_kv->key;
-            kv_copy.value = old_kv->value;
-
-            size_t new_index = hash(kv_copy.key) % new_bucket_count;
-            if (dynarray_push_value(&new_buckets[new_index], &kv_copy) != 0) {
-                /* Cleanup on failure */
-                for (size_t k = 0; k < new_bucket_count; k++) {
-                    dynarray_free(&new_buckets[k]);
-                }
-                free(new_buckets);
-                return false; // OOM
+    if (free_key || free_value) {
+        for (size_t i = 0; i < map->capacity; i++) {
+            void *k = map->entries[i].key;
+            if (k != NULL && k != TOMBSTONE) {
+                if (free_key) free_key(k);
+                if (free_value && map->entries[i].value) free_value(map->entries[i].value);
             }
         }
     }
 
-    /* Free old buckets */
-    for (size_t i = 0; i < map->bucket_count; i++) {
-        dynarray_free(&map->buckets[i]);
+    if (!map->arena) {
+        free(map->entries);
+        free(map);
     }
-    free(map->buckets);
+}
 
-    map->buckets = new_buckets;
-    map->bucket_count = new_bucket_count;
-    /* map->size remains the same (we copied all items) */
+bool hashmap_rehash(
+    HashMap* map,
+    size_t new_capacity,
+    size_t (*hash)(void*),
+    int (*cmp)(void*, void*)
+) {
+    if (!map || new_capacity == 0 || !hash || !cmp) return false;
+
+    KeyValue *new_entries;
+    if (map->arena) {
+        new_entries = arena_calloc(map->arena, sizeof(KeyValue) * new_capacity);
+    } else {
+        new_entries = calloc(new_capacity, sizeof(KeyValue));
+    }
+    if (!new_entries) return false;
+
+    for (size_t i = 0; i < map->capacity; i++) {
+        void *k = map->entries[i].key;
+        if (k != NULL && k != TOMBSTONE) {
+            size_t h = hash(k);
+            size_t index = h % new_capacity;
+            
+            while (new_entries[index].key != NULL) {
+                index = (index + 1) % new_capacity;
+            }
+            new_entries[index] = map->entries[i];
+        }
+    }
+
+    if (!map->arena) {
+        free(map->entries);
+    }
+
+    map->entries = new_entries;
+    map->capacity = new_capacity;
+    map->tombstones = 0;
     return true;
 }
 
@@ -111,37 +103,44 @@ bool hashmap_put(
     size_t (*hash)(void*),
     int (*cmp)(void*, void*)
 ) {
-    if (!map || !hash || !cmp) return false;
+    if (!map || !key || !hash || !cmp) return false;
 
-    /* Resize when load factor > 0.75 */
-    if (map->size >= (map->bucket_count * 3) / 4) {
-        size_t new_bucket_count = map->bucket_count * 2;
-        if (!hashmap_rehash(map, new_bucket_count, hash, cmp)) {
-            /* Rehash failed (OOM) — continue with current size but insertion may be slower */
-        }
+    // Resize if load factor > 0.75 (counting tombstones as used)
+    if (map->size + map->tombstones >= (map->capacity * 3) / 4) {
+        size_t new_cap = map->capacity * 2;
+        hashmap_rehash(map, new_cap, hash, cmp);
     }
 
-    size_t bucket_index = hash(key) % map->bucket_count;
-    DynArray *bucket = &map->buckets[bucket_index];
+    size_t h = hash(key);
+    size_t index = h % map->capacity;
+    size_t first_tombstone = (size_t)-1;
 
-    /* Check if key already exists (cmp==0 means equal) */
-    for (size_t i = 0; i < bucket->count; i++) {
-        KeyValue *kv = (KeyValue*)dynarray_get(bucket, i);
-        if (kv && cmp(kv->key, key) == 0) {
-            /* Update existing value */
-            kv->value = value;
+    for (size_t i = 0; i < map->capacity; i++) {
+        void *k = map->entries[index].key;
+        if (k == NULL) {
+            // Found empty slot
+            if (first_tombstone != (size_t)-1) {
+                index = first_tombstone;
+                map->tombstones--;
+            }
+            map->entries[index].key = key;
+            map->entries[index].value = value;
+            map->size++;
+            return true;
+        } else if (k == TOMBSTONE) {
+            if (first_tombstone == (size_t)-1) {
+                first_tombstone = index;
+            }
+        } else if (cmp(k, key) == 0) {
+            // Update existing
+            map->entries[index].value = value;
             return true;
         }
+        index = (index + 1) % map->capacity;
     }
 
-    /* Insert new key-value pair (copy struct into dynarray) */
-    KeyValue kv = {key, value};
-    if (dynarray_push_value(bucket, &kv) != 0) {
-        return false; // OOM
-    }
-
-    map->size++;
-    return true;
+    // Should never reach here if resizing correctly
+    return false;
 }
 
 void* hashmap_get(
@@ -150,18 +149,22 @@ void* hashmap_get(
     size_t (*hash)(void*),
     int (*cmp)(void*, void*)
 ) {
-    if (!map || !hash || !cmp) return NULL;
+    if (!map || !key || !hash || !cmp) return NULL;
 
-    size_t bucket_index = hash(key) % map->bucket_count;
-    DynArray *bucket = &map->buckets[bucket_index];
+    size_t h = hash(key);
+    size_t index = h % map->capacity;
 
-    for (size_t i = 0; i < bucket->count; i++) {
-        KeyValue *kv = (KeyValue*)dynarray_get(bucket, i);
-        if (kv && cmp(kv->key, key) == 0) {
-            return kv->value; // Found
+    for (size_t i = 0; i < map->capacity; i++) {
+        void *k = map->entries[index].key;
+        if (k == NULL) {
+            return NULL;
+        } else if (k != TOMBSTONE && cmp(k, key) == 0) {
+            return map->entries[index].value;
         }
+        index = (index + 1) % map->capacity;
     }
-    return NULL; // Not found
+
+    return NULL;
 }
 
 bool hashmap_remove(
@@ -172,22 +175,28 @@ bool hashmap_remove(
     void (*free_key)(void*),
     void (*free_value)(void*)
 ) {
-    if (!map || !hash || !cmp) return false;
+    if (!map || !key || !hash || !cmp) return false;
 
-    size_t bucket_index = hash(key) % map->bucket_count;
-    DynArray *bucket = &map->buckets[bucket_index];
+    size_t h = hash(key);
+    size_t index = h % map->capacity;
 
-    for (size_t i = 0; i < bucket->count; i++) {
-        KeyValue *kv = (KeyValue*)dynarray_get(bucket, i);
-        if (kv && cmp(kv->key, key) == 0) {
-            if (free_key) free_key(kv->key);
-            if (free_value) free_value(kv->value);
-
-            dynarray_remove(bucket, i);
+    for (size_t i = 0; i < map->capacity; i++) {
+        void *k = map->entries[index].key;
+        if (k == NULL) {
+            return false;
+        } else if (k != TOMBSTONE && cmp(k, key) == 0) {
+            if (free_key) free_key(k);
+            if (free_value && map->entries[index].value) free_value(map->entries[index].value);
+            
+            map->entries[index].key = TOMBSTONE;
+            map->entries[index].value = NULL;
             map->size--;
+            map->tombstones++;
             return true;
         }
+        index = (index + 1) % map->capacity;
     }
+
     return false;
 }
 
@@ -197,11 +206,10 @@ void hashmap_foreach(
 ) {
     if (!map || !callback) return;
 
-    for (size_t i = 0; i < map->bucket_count; i++) {
-        DynArray *bucket = &map->buckets[i];
-        for (size_t j = 0; j < bucket->count; j++) {
-            KeyValue *kv = (KeyValue*)dynarray_get(bucket, j);
-            if (kv) callback(kv->key, kv->value);
+    for (size_t i = 0; i < map->capacity; i++) {
+        void *k = map->entries[i].key;
+        if (k != NULL && k != TOMBSTONE) {
+            callback(k, map->entries[i].value);
         }
     }
 }

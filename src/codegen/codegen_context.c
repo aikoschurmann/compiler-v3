@@ -3,7 +3,7 @@
 
 CodegenMap* codegen_map_create(CodegenContext *ctx, CodegenMap *parent) {
     CodegenMap *m = xmalloc(sizeof(CodegenMap));
-    m->map = hashmap_create(8);
+    m->map = hashmap_create(NULL, 8);
     m->parent = parent;
     return m;
 }
@@ -71,8 +71,8 @@ CodegenContext* codegen_context_create(TypeStore *store, const char *module_name
     ctx->target_data = LLVMCreateTargetDataLayout(ctx->machine);
     LLVMSetModuleDataLayout(ctx->module, ctx->target_data);
 
-    ctx->globals = hashmap_create(1024);
-    ctx->type_cache = hashmap_create(256);
+    ctx->globals = hashmap_create(NULL, 1024);
+    ctx->type_cache = hashmap_create(NULL, 256);
     ctx->locals = codegen_map_create(ctx, NULL);
     ctx->loop_cond_bb = NULL;
     ctx->loop_end_bb = NULL;

@@ -9,9 +9,9 @@ TestCompileResult test_compile_source(const char *src) {
     res.arena = arena_create(4 * 1024 * 1024); // 4MB
     
     // 1. Interners
-    DenseArenaInterner *keywords = intern_table_create(hashmap_create(32), res.arena, string_copy_func, slice_hash, slice_cmp);
-    DenseArenaInterner *identifiers = intern_table_create(hashmap_create(128), res.arena, string_copy_func, slice_hash, slice_cmp);
-    DenseArenaInterner *strings = intern_table_create(hashmap_create(64), res.arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *keywords = intern_table_create(hashmap_create(res.arena, 32), res.arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *identifiers = intern_table_create(hashmap_create(res.arena, 128), res.arena, string_copy_func, slice_hash, slice_cmp);
+    DenseArenaInterner *strings = intern_table_create(hashmap_create(res.arena, 64), res.arena, string_copy_func, slice_hash, slice_cmp);
     
     lexer_populate_default_keywords(keywords);
 

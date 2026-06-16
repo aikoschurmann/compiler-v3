@@ -2,11 +2,11 @@
 
 #include <stddef.h>
 #include <stdbool.h>
-#include "dynamic_array.h"
+#include "arena.h"
 #include "core/utils.h"
 
 /* -----------------------------
-   HashMap API (separate chaining)
+   HashMap API (Open Addressing)
    ----------------------------- */
 
 typedef struct {
@@ -15,13 +15,15 @@ typedef struct {
 } KeyValue;
 
 typedef struct {
-    DynArray *buckets;     /* array of buckets, each bucket is a DynArray of KeyValue */
-    size_t bucket_count;   /* number of buckets */
-    size_t size;           /* total number of key-value pairs */
+    Arena *arena;          /* If NULL, uses malloc/free */
+    KeyValue *entries;     /* Contiguous array of KeyValue pairs */
+    size_t capacity;       /* Number of slots in entries */
+    size_t size;           /* Number of active elements */
+    size_t tombstones;     /* Number of deleted slots */
 } HashMap;
 
 /* Constructor / Destructor */
-HashMap* hashmap_create(size_t bucket_count);
+HashMap* hashmap_create(Arena *arena, size_t initial_capacity);
 
 void hashmap_destroy(
     HashMap* map,
@@ -59,7 +61,7 @@ bool hashmap_remove(
 /* Resize / Rehash */
 bool hashmap_rehash(
     HashMap* map,
-    size_t new_bucket_count,
+    size_t new_capacity,
     size_t (*hash)(void*),
     int (*cmp)(void*, void*)
 );
@@ -71,4 +73,3 @@ void hashmap_foreach(
     HashMap* map,
     void (*func)(void* key, void* value)
 );
-

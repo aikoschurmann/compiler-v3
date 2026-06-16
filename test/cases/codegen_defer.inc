@@ -57,3 +57,26 @@ CODEGEN_EXIT("defer_shadowing_var",
     "    }\n"
     "    return val;\n"
     "}", 5)
+
+CODEGEN_EXIT("defer_break_double_exec",
+    "fn main() -> i32 {\n"
+    "    res: i32 = 0;\n"
+    "    while (true) {\n"
+    "        defer { res = res + 1; }\n"
+    "        break;\n"
+    "    }\n"
+    "    // Should only execute once (during break)\n"
+    "    return res;\n"
+    "}", 1)
+
+CODEGEN_EXIT("defer_break_double_exec_if",
+    "fn main() -> i32 {\n"
+    "    res: i32 = 0;\n"
+    "    while (true) {\n"
+    "        defer { res = res + 1; }\n"
+    "        if (true) {\n"
+    "            break;\n"
+    "        }\n"
+    "    }\n"
+    "    return res;\n"
+    "}", 1)

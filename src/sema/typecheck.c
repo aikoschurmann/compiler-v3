@@ -497,8 +497,8 @@ static void resolve_program_structs(TypeCheckContext *ctx, Scope *global_scope) 
         struct_type->as.struct_type.fields = arena_alloc(ctx->store->arena, sizeof(StructField) * struct_type->as.struct_type.field_count);
         
         // Initialize field_map and methods map
-        struct_type->as.struct_type.field_map = hashmap_create(struct_type->as.struct_type.field_count);
-        struct_type->as.struct_type.methods   = hashmap_create(4); 
+        struct_type->as.struct_type.field_map = hashmap_create(ctx->store->arena, struct_type->as.struct_type.field_count);
+        struct_type->as.struct_type.methods   = hashmap_create(ctx->store->arena, 4); 
 
         for (size_t j = 0; j < struct_type->as.struct_type.field_count; j++) {
             AstFieldDecl *fdecl = (AstFieldDecl*)dynarray_get(struct_decl->fields, j);
