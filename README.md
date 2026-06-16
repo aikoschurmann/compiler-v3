@@ -1,153 +1,434 @@
-# Compiler V3
+# The Language
 
-A custom compiler implemented in C for a strongly-typed, procedural language with syntax inspired by Rust and C. This project features a hand-written recursive descent parser, a robust semantic analysis phase, and a custom build system.
+A statically-typed, procedural language with a focus on explicit memory control and zero hidden allocations. Syntax borrows from Rust and C while keeping things simple: every variable is declared with a type, every allocation is visible, and there is no garbage collector.
 
-## 🚀 Features
-
-### Language Features
-* **Primitive Types**: `i32`, `i64`, `f32`, `f64`, `bool`, `char`, `string`.
-* **Type Inference**: Automatic type inference for array sizes and implicit numeric promotions (e.g., `i32` to `f64`).
-* **Complex Arrays**: 
-    * Multi-dimensional arrays (e.g., `f64[3][3]`).
-    * Inferred array sizes (e.g., `i32[] = {1, 2, 3}`).
-    * Strict dimension and size validation during compilation.
-* **Pointers & Memory**: Full pointer support (`*`, `&`, `**`), including arrays of pointers.
-* **Functions**: 
-    * Function declarations with return types.
-    * Function pointers and higher-order functions (passing functions as arguments).
-* **Control Flow**: `if`, `else`, `while`, `return`, `break`, `continue`.
-* **Scope & Shadowing**: Block-scoped variables with support for variable shadowing.
-* **Constants**: Compile-time constant evaluation and folding (`const x: i32 = 10 + 5;`).
-
-### Compiler Architecture
-* **Lexer**: Efficient tokenization handling identifiers, keywords, literals, and operators.
-* **Parser**: Recursive descent parser generating a detailed Abstract Syntax Tree (AST).
-* **Semantic Analyzer (Sema)**: 
-    * Symbol table management with scope hierarchy.
-    * Type checking with implicit casting logic.
-    * Structural validation for initializer lists (e.g., matching nesting levels).
-    * Constant expression evaluation.
-* **Error Reporting**: Rich error messages with source highlighting, line/column numbers, and specific error codes (e.g., dimension mismatches).
+Source files use the `.tn` extension.
 
 ---
 
-## 🛠️ Building and Running
+## Getting Started
 
 ### Prerequisites
-* GCC or Clang
-* Make
 
-### Compilation
-To build the compiler:
+- Clang
+- LLVM
+- Make
+
+### Build the compiler
+
 ```bash
-make
+make          # builds both release and dev binaries
+make test     # runs the test suite
 ```
 
-To build and immediately run the compiler on the default input file (input/test.rs):
+### Compile and run a program
+
 ```bash
-make run
+./out/compiler path/to/program.tn --run
 ```
 
-### Usage
-Run the compiled executable with a source file argument:
-```bash
-./out/compiler input/test.rs
+---
+
+## Language Tour
+
+### Variables and Constants
+
+Variables are declared with `name: Type = value`. Type annotations are always required.
+
+```
+x: i32 = 10;
+pi: f64 = 3.14159;
+name: *char = "hello";
+flag: bool = true;
 ```
 
-### 📄 Language Syntax Examples
-Variables and Constants
-```rust
-// Compile-time constants
-const MAX_SIZE: i64 = 100;
-const PI: f64 = 3.14159;
+Constants are evaluated at compile time and can be used anywhere a literal is valid.
 
-// Variable declarations
-val: i32 = 10;
-val_float: f32 = 10; // Implicit promotion: 10 (int) -> 10.0 (float)
+```
+const MAX: i32 = 100;
+const HALF_MAX: i32 = MAX / 2;  // constant folding
 ```
 
-Arrays and Matrices
-```rust
-// 1D Fixed Size
-arr: i32[3] = {1, 2, 3};
+---
 
-// 1D Inferred Size
-list: i32[] = {10, 20, 30, 40}; // Type becomes i32[4]
+### Primitive Types
 
-// Multi-dimensional Arrays (Matrix)
-matrix: f64[2][2] = {
-    {1.0, 0.0},
-    {0.0, 1.0}
-};
+| Type    | Description                    |
+|---------|--------------------------------|
+| `i32`   | 32-bit signed integer          |
+| `i64`   | 64-bit signed integer          |
+| `f32`   | 32-bit floating-point          |
+| `f64`   | 64-bit floating-point          |
+| `bool`  | Boolean (`true` / `false`)     |
+| `char`  | Single byte character          |
+| `*T`    | Pointer to type `T`            |
+| `*void` | Untyped pointer                |
+| `void`  | No value (function return only)|
 
-// Mixed types in initializers are auto-promoted based on the array base type
-mixed_arr: f64[] = {1, 2.5, 3}; // Becomes {1.0, 2.5, 3.0}
+---
+
+### Functions
+
 ```
-
-Functions and Function Pointers
-```rust
 fn add(a: i32, b: i32) -> i32 {
     return a + b;
 }
 
-fn apply_op(a: i32, b: i32, op: fn(i32, i32) -> i32) -> i32 {
+fn greet(name: *char) -> void {
+    print("Hello, ");
+    println(name);
+}
+```
+
+Functions can be passed as values using function pointer types:
+
+```
+fn apply(a: i32, b: i32, op: fn(i32, i32) -> i32) -> i32 {
     return op(a, b);
 }
 
-fn main() {
-    // Passing function as argument
-    res: i32 = apply_op(10, 20, add);
-
-    // Array of functions
-    ops: (fn(i32, i32) -> i32)[] = { add, add };
+fn main() -> i32 {
+    result: i32 = apply(10, 20, add);
+    return result;  // 30
 }
 ```
 
-Pointers
-```rust
-fn main() {
-    x: i32 = 50;
-    
-    // Address-of operator
-    ptr: i32* = &x;
-    
-    // Dereference operator
-    val: i32 = *ptr;
-    
-    // Pointer to pointer
-    ptr_ptr: i32** = &ptr;
+---
+
+### Control Flow
+
+**If / else**
+
+```
+if x > 0 {
+    println("positive");
+} else if x < 0 {
+    println("negative");
+} else {
+    println("zero");
 }
 ```
 
-📂 Project Structure
-```txt
-├── include/
-│   ├── cli/            # Command line interface & metrics headers
-│   ├── core/           # File I/O, Utilities, Source handling
-│   ├── datastructures/ # Dynamic Arrays, Hash Maps, Arenas, Interners
-│   ├── lexing/         # Lexer headers
-│   ├── parsing/        # AST definitions & Parser headers
-│   └── sema/           # Semantic Analysis, Type definitions & Reporting
-├── src/
-│   ├── cli/            # CLI implementation
-│   ├── core/           # Core utilities implementation
-│   ├── datastructures/ # Data structure implementations
-│   ├── lexing/         # Lexer logic
-│   ├── parsing/        # Recursive descent parser logic
-│   ├── sema/           # Type checking, Symbol resolution, Expr validation
-│   └── main.c          # Entry point
-├── input/              # Test source files (.rs)
-├── test/               # C-based Unit testing suite
-├── makefile            # Build configuration
-└── lang.bnf            # Formal grammar definition
+**While**
+
+```
+i: i32 = 0;
+while (i < 10) {
+    i = i + 1;
+}
 ```
 
-### 🧪 Testing
-The project includes a regression test harness located in the test/ directory. It validates the parser and semantic analyzer against various edge cases, including argument mismatches, complex type resolutions, and scope rules.
+**For**
 
-To run the tests
-```bash
-make test
+```
+for (i: i32 = 0; i < 10; i += 1) {
+    println(i);
+}
 ```
 
+**Break and continue**
 
+```
+while true {
+    if done { break; }
+    if skip { continue; }
+}
+```
+
+---
+
+### Structs and Methods
+
+Structs group fields together. Methods are regular functions with the struct type as a name prefix; `self` is an explicit pointer parameter.
+
+```
+struct Point {
+    x: f64;
+    y: f64;
+}
+
+fn Point.scale(self: *Point, factor: f64) -> void {
+    self.x = self.x * factor;
+    self.y = self.y * factor;
+}
+
+fn main() -> i32 {
+    p: Point = Point { x: 1.0, y: 2.0 };
+    p.scale(3.0);
+    // p.x == 3.0, p.y == 6.0
+    return 0;
+}
+```
+
+Struct fields initialise in any order, and structs can be nested:
+
+```
+struct Color { r: i32; g: i32; b: i32; }
+struct Pixel { pos: Point; color: Color; }
+
+px: Pixel = Pixel {
+    pos: Point { x: 10.0, y: 20.0 },
+    color: Color { r: 255, g: 0, b: 128 }
+};
+```
+
+---
+
+### Pointers
+
+Take the address of a variable with `&` and dereference with `*`.
+
+```
+x: i32 = 42;
+p: *i32 = &x;
+*p = 100;       // x is now 100
+```
+
+Pointer-to-pointer:
+
+```
+pp: **i32 = &p;
+val: i32 = **pp;  // 100
+```
+
+Null pointers use the `null` keyword or an explicit zero cast:
+
+```
+p: *Node = null;
+if p == null { ... }
+```
+
+Pointer arithmetic is done through integer casts:
+
+```
+next: *i32 = ((p as i64) + 4) as *i32;
+```
+
+Auto-deref through a pointer works on struct member access — `p.field` is shorthand for `(*p).field`.
+
+---
+
+### Arrays
+
+Fixed-size arrays:
+
+```
+nums: i32[5] = {1, 2, 3, 4, 5};
+matrix: f64[3][3];  // multidimensional
+```
+
+The size can be inferred from the initialiser:
+
+```
+primes: i32[] = {2, 3, 5, 7, 11};  // becomes i32[5]
+```
+
+Arrays decay to pointers when taken by address:
+
+```
+p: *i32 = &nums[0];
+```
+
+---
+
+### Casts
+
+Use `as` to cast between numeric types, pointers, and mixed combinations. Casts are explicit — there are no silent narrowing conversions.
+
+```
+big: i64 = 0xFFFFFFFF0000000A;
+small: i32 = big as i32;   // truncate
+
+ratio: f64 = 7.9;
+n: i32 = ratio as i32;     // truncate to 7
+
+c: char = 'A';
+code: i32 = c as i32;      // 65
+
+raw: *void = &x as *void;  // pointer reinterpret
+```
+
+---
+
+### Aliases
+
+`alias` binds a new name to any existing symbol — a variable, function, struct, or type. The alias and the original refer to the same thing.
+
+```
+alias Vec2 = Point;                 // type alias
+alias origin = default_point;      // variable alias
+alias sum = add;                    // function alias
+
+s: Vec2 = Vec2 { x: 0.0, y: 0.0 };
+result: i32 = sum(1, 2);
+```
+
+---
+
+### Defer
+
+`defer` schedules a statement or block to run when the current scope exits, including on early returns. Deferred actions run in last-in, first-out order.
+
+```
+fn read_file() -> i32 {
+    f: *File = open("data.txt");
+    defer { close(f); }       // always runs, even on early return
+
+    if f == null { return -1; }
+    // ... work with f ...
+    return 0;
+}
+```
+
+Defer inside loops fires on each iteration:
+
+```
+for (i: i32 = 0; i < 3; i += 1) {
+    defer { cleanup(i); }  // runs at the end of each loop body
+    do_work(i);
+}
+```
+
+---
+
+### Modules and Imports
+
+Code is split into modules. A module is a `.tn` file; its public declarations (marked `pub`) are visible to importers.
+
+**Import the whole standard library:**
+
+```
+import std;
+
+fn main() -> i32 {
+    a: std.arena.Arena = std.arena.Arena.new(std.heap.allocator, 4096);
+    defer { a.destroy(); }
+    return 0;
+}
+```
+
+**Import a specific sub-module:**
+
+```
+import std.mem;
+
+alloc: std.mem.Allocator = std.heap.allocator;
+```
+
+**Import from a relative path:**
+
+```
+// project/utils.tn
+pub fn clamp(x: i32, lo: i32, hi: i32) -> i32 { ... }
+
+// project/main.tn
+import .utils { clamp };
+
+fn main() -> i32 {
+    return clamp(150, 0, 100);  // 100
+}
+```
+
+**Re-export:** mark an import `pub` to expose it to downstream modules.
+
+```
+pub import .mem;
+pub import .heap;
+```
+
+---
+
+### Memory Management
+
+There is no implicit allocation. All heap memory goes through an `Allocator` value, which you pass explicitly. The standard library ships two ready-to-use allocators.
+
+**Heap allocator** — wraps `malloc`/`free`:
+
+```
+import std;
+
+fn main() -> i32 {
+    p: *i32 = @alloc(i32, std.heap.allocator, 1);
+    *p = 42;
+    @free(std.heap.allocator, p);
+    return 0;
+}
+```
+
+**Arena allocator** — bump-pointer, freed all at once:
+
+```
+import std;
+alias Arena = std.arena.Arena;
+
+fn main() -> i32 {
+    arena: Arena = Arena.new(std.heap.allocator, 4096);
+    defer { arena.destroy(); }
+
+    a: std.mem.Allocator = arena.get_allocator();
+
+    node: *Node = @alloc(Node, a, 1);
+    node.val = 99;
+    // everything freed when arena.destroy() runs
+    return 0;
+}
+```
+
+**Allocating arrays:** pass a count as the third argument to `@alloc`.
+
+```
+buf: *i32 = @alloc(i32, std.heap.allocator, 64);
+buf[0] = 1;
+buf[63] = 2;
+@free(std.heap.allocator, buf);
+```
+
+**Custom allocators** implement `std.mem.Allocator`:
+
+```
+import std.mem;
+
+pub struct Allocator {
+    ctx: *void;
+    _alloc: fn(*void, i64) -> *void;
+    _free:  fn(*void, *void) -> void;
+}
+```
+
+Any struct with `ctx`, `_alloc`, and `_free` fields works as a drop-in allocator.
+
+---
+
+### FFI — Calling C Functions
+
+Declare an external C function with `@link` and the symbol name. No body is needed.
+
+```
+@link("malloc")
+fn malloc(size: i64) -> *void;
+
+@link("free")
+fn free(ptr: *void) -> void;
+
+@link("printf")
+fn printf(fmt: *char) -> i32;
+```
+
+The standard library's `std.libc` module provides ready-made bindings for the most common C functions.
+
+---
+
+## Standard Library
+
+| Module            | Contents                                              |
+|-------------------|-------------------------------------------------------|
+| `std.heap`        | `allocator` — global heap allocator (malloc/free)     |
+| `std.mem`         | `Allocator` struct and interface                      |
+| `std.arena`       | `Arena` — bump-pointer allocator with bulk free       |
+| `std.fixed_arena` | `FixedArena` — arena over a caller-supplied buffer    |
+| `std.string`      | `Str` — non-owning string view with slice/compare ops |
+| `std.math`        | `abs`, `min`, `max`, `clamp` for i32/i64/f64          |
+| `std.io`          | `print` / `println`                                   |
+| `std.libc`        | Bindings for malloc, free, printf, memcpy, strlen … |
+
+Import `std` to get everything, or import individual sub-modules to keep dependencies explicit.
