@@ -110,12 +110,24 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
             ctx->current_func_type = fn_type_sema;
             ctx->deferred_actions->count = 0; // Clear for new function
 
+            // Setup central cleanup tracking
+            ctx->current_cleanup_bb = NULL;
+            ctx->exit_dest_var = create_entry_block_alloca(ctx, LLVMInt32TypeInContext(ctx->context), "exit_dest");
+            
             bool sret = type_is_indirect(ctx, fn_type_sema->as.func.return_type);
             if (sret) {
                 ctx->sret_ptr = LLVMGetParam(func, 0);
+                ctx->ret_val_var = NULL;
             } else {
                 ctx->sret_ptr = NULL;
+                LLVMTypeRef ret_ty = get_llvm_type(ctx, fn_type_sema->as.func.return_type);
+                if (LLVMGetTypeKind(ret_ty) != LLVMVoidTypeKind) {
+                    ctx->ret_val_var = create_entry_block_alloca(ctx, ret_ty, "ret_val");
+                } else {
+                    ctx->ret_val_var = NULL;
+                }
             }
+
             
             // Register parameters
             size_t param_count = fdecl->params ? fdecl->params->count : 0;
@@ -146,35 +158,18 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
             }
             
             // Generate the user's actual code directly in the function scope
-            if (fdecl->body->node_type == AST_BLOCK) {
-                DynArray *stmts = fdecl->body->data.block.statements;
-                for (size_t i = 0; i < stmts->count; i++) {
-                    AstNode *stmt = *(AstNode**)dynarray_get(stmts, i);
-                    codegen_statement(ctx, stmt);
-                }
-            } else {
-                codegen_statement(ctx, fdecl->body);
-            }
+            codegen_statement(ctx, fdecl->body);
 
             // Run deferred actions before implicit return and BEFORE destroying scope
             LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
             if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
-                for (int i = (int)ctx->deferred_actions->count - 1; i >= 0; i--) {
-                    AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
-                    codegen_statement(ctx, body);
-                }
+                bool sret_implicit = type_is_indirect(ctx, fn_type_sema->as.func.return_type);
+                LLVMTypeRef ret_ty = sret_implicit ? LLVMVoidTypeInContext(ctx->context) : get_llvm_type(ctx, fn_type_sema->as.func.return_type);
                 
-                // Re-fetch the insert block in case deferred actions altered the control flow
-                current_block = LLVMGetInsertBlock(ctx->builder);
-                if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
-                    bool sret_implicit = type_is_indirect(ctx, fn_type_sema->as.func.return_type);
-                    LLVMTypeRef ret_ty = sret_implicit ? LLVMVoidTypeInContext(ctx->context) : get_llvm_type(ctx, fn_type_sema->as.func.return_type);
-                    
-                    if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind) {
-                        LLVMBuildRetVoid(ctx->builder);
-                    } else {
-                        LLVMBuildRet(ctx->builder, LLVMConstNull(ret_ty));
-                    }
+                if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind) {
+                    LLVMBuildRetVoid(ctx->builder);
+                } else {
+                    LLVMBuildRet(ctx->builder, LLVMConstNull(ret_ty));
                 }
             }
 

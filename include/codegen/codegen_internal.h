@@ -44,6 +44,11 @@ struct CodegenContext {
     // For defer
     DynArray *deferred_actions;
     size_t loop_defer_count;
+
+    // Centralized defer cleanup tracking
+    LLVMBasicBlockRef current_cleanup_bb; 
+    LLVMValueRef exit_dest_var;
+    LLVMValueRef ret_val_var;
 };
 
 /* --- Internal Helpers --- */

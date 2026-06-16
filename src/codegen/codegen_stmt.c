@@ -1,6 +1,11 @@
 #include "codegen_internal.h"
 #include "dynamic_array.h"
 
+typedef struct {
+    AstNode *body;
+    LLVMBasicBlockRef bb;
+} DeferInfo;
+
 static LLVMValueRef coerce_to_bool(CodegenContext *ctx, LLVMValueRef val) {
     LLVMTypeRef ty = LLVMTypeOf(val);
     LLVMTypeKind kind = LLVMGetTypeKind(ty);
@@ -23,14 +28,11 @@ static LLVMValueRef coerce_to_bool(CodegenContext *ctx, LLVMValueRef val) {
 void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
     if (!stmt) return;
     
-    // Check if the current block is already terminated. If so, any further statements
-    // in this block are unreachable dead code and must not be emitted.
     LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
     if (current_block && LLVMGetBasicBlockTerminator(current_block)) {
         return;
     }
     
-    // Strict contract: verify nodes have types, except for pure control-flow statements
     if (!stmt->type) {
         switch (stmt->node_type) {
             case AST_BLOCK:
@@ -52,20 +54,90 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
         case AST_BLOCK: {
             DynArray *stmts = stmt->data.block.statements;
             ctx->locals = codegen_map_create(ctx, ctx->locals);
+            
             size_t previous_defer_count = ctx->deferred_actions->count;
+            LLVMBasicBlockRef prev_cleanup = ctx->current_cleanup_bb;
 
             for (size_t i = 0; i < stmts->count; i++) {
                 AstNode *s = *(AstNode**)dynarray_get(stmts, i);
                 codegen_statement(ctx, s);
             }
 
-            // Execute deferred actions in LIFO order
-            for (int i = (int)ctx->deferred_actions->count - 1; i >= (int)previous_defer_count; i--) {
-                AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, i);
-                codegen_statement(ctx, body);
-            }
-            ctx->deferred_actions->count = previous_defer_count;
+            size_t current_defer_count = ctx->deferred_actions->count;
 
+            if (current_defer_count > previous_defer_count) {
+                LLVMValueRef func = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
+                LLVMBasicBlockRef after_cleanup_bb = LLVMAppendBasicBlockInContext(ctx->context, func, "after_cleanup");
+
+                current_block = LLVMGetInsertBlock(ctx->builder);
+                if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
+                    LLVMBuildStore(ctx->builder, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 3, 0), ctx->exit_dest_var);
+                    LLVMBuildBr(ctx->builder, ctx->current_cleanup_bb);
+                }
+
+                for (int i = (int)current_defer_count - 1; i >= (int)previous_defer_count; i--) {
+                    DeferInfo *info = *(DeferInfo**)dynarray_get(ctx->deferred_actions, i);
+                    LLVMPositionBuilderAtEnd(ctx->builder, info->bb);
+
+                    LLVMBasicBlockRef target_next = (i == (int)previous_defer_count) 
+                                                  ? after_cleanup_bb 
+                                                  : (*(DeferInfo**)dynarray_get(ctx->deferred_actions, i - 1))->bb;
+                    
+                    ctx->current_cleanup_bb = target_next;
+                    codegen_statement(ctx, info->body);
+
+                    LLVMBasicBlockRef curr_clean = LLVMGetInsertBlock(ctx->builder);
+                    if (curr_clean && !LLVMGetBasicBlockTerminator(curr_clean)) {
+                        LLVMBuildBr(ctx->builder, ctx->current_cleanup_bb);
+                    }
+                }
+
+                LLVMPositionBuilderAtEnd(ctx->builder, after_cleanup_bb);
+                LLVMValueRef dest = LLVMBuildLoad2(ctx->builder, LLVMInt32TypeInContext(ctx->context), ctx->exit_dest_var, "dest");
+                LLVMBasicBlockRef natural_bb = LLVMAppendBasicBlockInContext(ctx->context, func, "natural");
+                LLVMValueRef sw = LLVMBuildSwitch(ctx->builder, dest, natural_bb, 3);
+
+                if (prev_cleanup) {
+                    LLVMAddCase(sw, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 0, 0), prev_cleanup);
+                } else {
+                    LLVMBasicBlockRef ret_bb = LLVMAppendBasicBlockInContext(ctx->context, func, "ret");
+                    LLVMAddCase(sw, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 0, 0), ret_bb);
+                    LLVMPositionBuilderAtEnd(ctx->builder, ret_bb);
+
+                    bool sret = type_is_indirect(ctx, ctx->current_func_type->as.func.return_type);
+                    if (sret) {
+                        LLVMBuildRetVoid(ctx->builder);
+                    } else if (ctx->ret_val_var) {
+                        LLVMValueRef final_ret = codegen_load_value(ctx, ctx->ret_val_var, ctx->current_func_type->as.func.return_type);
+                        LLVMBuildRet(ctx->builder, final_ret);
+                    } else {
+                        LLVMBuildRetVoid(ctx->builder);
+                    }
+                }
+
+                if (ctx->loop_end_bb) {
+                    LLVMBasicBlockRef next_bb = prev_cleanup ? prev_cleanup : ctx->loop_end_bb;
+                    LLVMAddCase(sw, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 1, 0), next_bb);
+                }
+
+                if (ctx->loop_cond_bb) {
+                    LLVMBasicBlockRef next_bb = prev_cleanup ? prev_cleanup : ctx->loop_cond_bb;
+                    LLVMAddCase(sw, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 2, 0), next_bb);
+                }
+
+                LLVMPositionBuilderAtEnd(ctx->builder, natural_bb);
+                
+                // Cleanup allocated DeferInfos for this block
+                for (size_t i = previous_defer_count; i < current_defer_count; i++) {
+                    free(*(DeferInfo**)dynarray_get(ctx->deferred_actions, i));
+                }
+                ctx->deferred_actions->count = previous_defer_count;
+
+            } else {
+                // No defers, just continue
+            }
+
+            ctx->current_cleanup_bb = prev_cleanup;
             CodegenMap *old = ctx->locals;
             ctx->locals = old->parent;
             codegen_map_destroy(old);
@@ -113,11 +185,9 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
 
             LLVMBasicBlockRef old_cond = ctx->loop_cond_bb;
             LLVMBasicBlockRef old_end  = ctx->loop_end_bb;
-            size_t old_loop_defer      = ctx->loop_defer_count;
 
             ctx->loop_cond_bb = cond_bb;
             ctx->loop_end_bb  = end_bb;
-            ctx->loop_defer_count = ctx->deferred_actions->count;
 
             LLVMPositionBuilderAtEnd(ctx->builder, body_bb);
             codegen_statement(ctx, whl->body);
@@ -126,7 +196,6 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
 
             ctx->loop_cond_bb = old_cond;
             ctx->loop_end_bb  = old_end;
-            ctx->loop_defer_count = old_loop_defer;
 
             LLVMPositionBuilderAtEnd(ctx->builder, end_bb);
             break;
@@ -156,11 +225,9 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
 
             LLVMBasicBlockRef old_cond = ctx->loop_cond_bb;
             LLVMBasicBlockRef old_end  = ctx->loop_end_bb;
-            size_t old_loop_defer      = ctx->loop_defer_count;
 
             ctx->loop_cond_bb = post_bb;
             ctx->loop_end_bb  = end_bb;
-            ctx->loop_defer_count = ctx->deferred_actions->count;
 
             LLVMPositionBuilderAtEnd(ctx->builder, body_bb);
             codegen_statement(ctx, fst->body);
@@ -174,7 +241,6 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
 
             ctx->loop_cond_bb = old_cond;
             ctx->loop_end_bb  = old_end;
-            ctx->loop_defer_count = old_loop_defer;
 
             LLVMPositionBuilderAtEnd(ctx->builder, end_bb);
             CodegenMap *old = ctx->locals;
@@ -197,55 +263,35 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
                 }
             }
 
-            // Execute defers in LIFO order. Pop them one by one so that if a defer 
-            // contains a return, the recursive AST_RETURN_STATEMENT call will 
-            // process the remaining defers correctly.
-            while (ctx->deferred_actions->count > 0) {
-                AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, ctx->deferred_actions->count - 1);
-                ctx->deferred_actions->count--; // Pop before execution
-                codegen_statement(ctx, body);
-                
-                current_block = LLVMGetInsertBlock(ctx->builder);
-                if (current_block && LLVMGetBasicBlockTerminator(current_block)) {
-                    // A defer terminated the block (e.g. it had a return).
-                    // The recursive call will have executed the rest of the stack.
-                    return;
-                }
-            }
-
             bool sret = type_is_indirect(ctx, fn_type->as.func.return_type);
             if (sret) {
                 if (retval) LLVMBuildStore(ctx->builder, retval, ctx->sret_ptr);
-                LLVMBuildRetVoid(ctx->builder);
-                return;
-            } else if (retval) {
-                LLVMBuildRet(ctx->builder, retval);
-                return;
+            } else if (retval && ctx->ret_val_var) {
+                LLVMBuildStore(ctx->builder, retval, ctx->ret_val_var);
             }
 
-            LLVMBuildRetVoid(ctx->builder);
+            LLVMBuildStore(ctx->builder, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 0, 0), ctx->exit_dest_var);
+
+            if (ctx->current_cleanup_bb) {
+                LLVMBuildBr(ctx->builder, ctx->current_cleanup_bb);
+            } else {
+                if (sret) {
+                    LLVMBuildRetVoid(ctx->builder);
+                } else if (retval) {
+                    LLVMBuildRet(ctx->builder, retval);
+                } else {
+                    LLVMBuildRetVoid(ctx->builder);
+                }
+            }
             break;
         }
 
         case AST_BREAK_STATEMENT: {
             if (ctx->loop_end_bb) {
-                // For break/continue, we only execute defers belonging to the current loop body
-                size_t original_count = ctx->deferred_actions->count;
-                while (ctx->deferred_actions->count > ctx->loop_defer_count) {
-                    AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, ctx->deferred_actions->count - 1);
-                    ctx->deferred_actions->count--;
-                    codegen_statement(ctx, body);
-                    
-                    LLVMBasicBlockRef stmt_block = LLVMGetInsertBlock(ctx->builder);
-                    if (stmt_block && LLVMGetBasicBlockTerminator(stmt_block)) {
-                        break;
-                    }
-                }
-                // Restore count so outer scopes still run their defers upon normal exit
-                ctx->deferred_actions->count = original_count;
-                
-                current_block = LLVMGetInsertBlock(ctx->builder);
-                if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
+                LLVMBuildStore(ctx->builder, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 1, 0), ctx->exit_dest_var);
+                if (ctx->current_cleanup_bb) {
+                    LLVMBuildBr(ctx->builder, ctx->current_cleanup_bb);
+                } else {
                     LLVMBuildBr(ctx->builder, ctx->loop_end_bb);
                 }
             }
@@ -254,21 +300,10 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
 
         case AST_CONTINUE_STATEMENT: {
             if (ctx->loop_cond_bb) {
-                size_t original_count = ctx->deferred_actions->count;
-                while (ctx->deferred_actions->count > ctx->loop_defer_count) {
-                    AstNode *body = *(AstNode**)dynarray_get(ctx->deferred_actions, ctx->deferred_actions->count - 1);
-                    ctx->deferred_actions->count--;
-                    codegen_statement(ctx, body);
-                    
-                    LLVMBasicBlockRef stmt_block = LLVMGetInsertBlock(ctx->builder);
-                    if (stmt_block && LLVMGetBasicBlockTerminator(stmt_block)) {
-                        break;
-                    }
-                }
-                ctx->deferred_actions->count = original_count;
-
-                current_block = LLVMGetInsertBlock(ctx->builder);
-                if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
+                LLVMBuildStore(ctx->builder, LLVMConstInt(LLVMInt32TypeInContext(ctx->context), 2, 0), ctx->exit_dest_var);
+                if (ctx->current_cleanup_bb) {
+                    LLVMBuildBr(ctx->builder, ctx->current_cleanup_bb);
+                } else {
                     LLVMBuildBr(ctx->builder, ctx->loop_cond_bb);
                 }
             }
@@ -299,7 +334,12 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
         }
 
         case AST_DEFER_STATEMENT: {
-            dynarray_push_value(ctx->deferred_actions, &stmt->data.defer_statement.body);
+            DeferInfo *info = xmalloc(sizeof(DeferInfo));
+            info->body = stmt->data.defer_statement.body;
+            info->bb = LLVMAppendBasicBlockInContext(ctx->context, LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder)), "defer_bb");
+            
+            dynarray_push_value(ctx->deferred_actions, &info);
+            ctx->current_cleanup_bb = info->bb;
             break;
         }
 

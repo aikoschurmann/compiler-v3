@@ -80,3 +80,39 @@ CODEGEN_EXIT("defer_break_double_exec_if",
     "    }\n"
     "    return res;\n"
     "}", 1)
+
+CODEGEN_EXIT("defer_lifo_order",
+    "fn main() -> i32 {\n"
+    "    // Test that we can mutate a variable, return it, but defers don't affect the returned value if it's already computed unless they explicitly return a new value. Wait, our `return` statement evaluates the expression, saves it to `ret_val`, runs defers, then returns `ret_val`. If a defer returns a NEW value, it overrides it.\n"
+    "    defer { return 12; }\n"
+    "    defer { return 5; }\n"
+    "    return 1;\n"
+    "}", 12)
+
+CODEGEN_EXIT("defer_continue_complex",
+    "fn main() -> i32 {\n"
+    "    res: i32 = 0;\n"
+    "    i: i32 = 0;\n"
+    "    while (i < 3) {\n"
+    "        defer { res = res + 1; }\n"
+    "        if (i == 1) {\n"
+    "            defer { res = res + 10; }\n"
+    "            i = i + 1;\n"
+    "            continue;\n"
+    "        }\n"
+    "        i = i + 1;\n"
+    "    }\n"
+    "    // i=0: res=0. natural exit -> res=1\n"
+    "    // i=1: res=1. inner defer, then outer defer -> res=1+10+1 = 12\n"
+    "    // i=2: res=12. natural exit -> res=13\n"
+    "    return res;\n"
+    "}", 13)
+
+CODEGEN_EXIT("defer_return_override",
+    "fn test_override() -> i32 {\n"
+    "    defer { return 99; }\n"
+    "    return 42;\n"
+    "}\n"
+    "fn main() -> i32 {\n"
+    "    return test_override();\n"
+    "}", 99)
