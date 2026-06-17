@@ -1,5 +1,13 @@
 #include "codegen_internal.h"
 
+static LLVMValueRef build_fat_ptr(CodegenContext *ctx, LLVMTypeRef dst_ty, LLVMValueRef ptr, size_t len) {
+    LLVMTypeRef i64_ty = LLVMInt64TypeInContext(ctx->context);
+    LLVMValueRef fat = LLVMGetUndef(dst_ty);
+    fat = LLVMBuildInsertValue(ctx->builder, fat, ptr, 0, "fat_ptr_ptr");
+    fat = LLVMBuildInsertValue(ctx->builder, fat, LLVMConstInt(i64_ty, len, 0), 1, "fat_ptr_len");
+    return fat;
+}
+
 LLVMValueRef codegen_materialize_slice(CodegenContext *ctx, LLVMValueRef val, Type *src_type, Type *dst_type) {
     size_t n = src_type->as.array.size;
     Type *src_inner = src_type->as.array.base;
@@ -7,7 +15,6 @@ LLVMValueRef codegen_materialize_slice(CodegenContext *ctx, LLVMValueRef val, Ty
     
     LLVMTypeRef dst_ty = get_llvm_type(ctx, dst_type);
     LLVMTypeRef i32_ty = LLVMInt32TypeInContext(ctx->context);
-    LLVMTypeRef i64_ty = LLVMInt64TypeInContext(ctx->context);
 
     // Check if the inner array also needs casting to a slice
     bool inner_needs_deep_cast = 
@@ -15,12 +22,9 @@ LLVMValueRef codegen_materialize_slice(CodegenContext *ctx, LLVMValueRef val, Ty
 
     if (!inner_needs_deep_cast) {
         // Base case (1D array): Just bitcast the pointer and pack it with length
-        LLVMValueRef fat = LLVMGetUndef(dst_ty);
         LLVMTypeRef elem_ptr_ty = LLVMStructGetTypeAtIndex(dst_ty, 0);
         LLVMValueRef elem_ptr = LLVMBuildBitCast(ctx->builder, val, elem_ptr_ty, "array_ptr_decay");
-        fat = LLVMBuildInsertValue(ctx->builder, fat, elem_ptr, 0, "fat_ptr_ptr");
-        fat = LLVMBuildInsertValue(ctx->builder, fat, LLVMConstInt(i64_ty, n, 0), 1, "fat_ptr_len");
-        return fat;
+        return build_fat_ptr(ctx, dst_ty, elem_ptr, n);
     }
 
     // Recursive case (2D+ array): Allocate headers on stack
@@ -42,10 +46,7 @@ LLVMValueRef codegen_materialize_slice(CodegenContext *ctx, LLVMValueRef val, Ty
     }
 
     // Pack the temporary headers into the outer slice
-    LLVMValueRef outer = LLVMGetUndef(dst_ty);
-    outer = LLVMBuildInsertValue(ctx->builder, outer, hdrs, 0, "outer_ptr");
-    outer = LLVMBuildInsertValue(ctx->builder, outer, LLVMConstInt(i64_ty, n, 0), 1, "outer_len");
-    return outer;
+    return build_fat_ptr(ctx, dst_ty, hdrs, n);
 }
 
 LLVMValueRef codegen_expr_ops(CodegenContext *ctx, AstNode *expr) {

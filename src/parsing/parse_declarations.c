@@ -8,6 +8,40 @@
 #include "ast.h"
 #include <string.h>
 
+static bool parse_program_decls(Parser *p, AstNode *program, ParseError *err, Span *first_span, Span *last_span, bool *have_any) {
+    for (;;) {
+        /* If there's an error already recorded, stop parsing.
+           parse_declaration sets err on failure. */
+        if (err && err->message) return false;
+
+        AstNode *decl = parse_declaration(p, err);
+        if (!decl) break; /* no (more) declarations or parse error produced */
+
+        if (dynarray_push_value(program->data.program.decls, &decl) != 0) {
+            if (err) create_parse_error(err, p, "out of memory adding declaration to program", NULL);
+            return false;
+        }
+
+        if (!*have_any) {
+            *first_span = decl->span;
+            *have_any = true;
+        }
+        *last_span = decl->span;
+    }
+    return true;
+}
+
+static void set_program_span(Parser *p, AstNode *program, bool have_any, Span first_span, Span last_span) {
+    if (have_any) {
+        program->span = span_join(&first_span, &last_span);
+    } else if (p->tokens && p->tokens->count > 0) {
+        Token *first = (Token*)dynarray_get(p->tokens, 0);
+        program->span = first->span;
+    } else {
+        program->span = (Span){0,0,0,0};
+    }
+}
+
 /* <Program> ::= { <Declaration> } */
 AstNode *parse_program(Parser *p, ParseError *err) {
     if (!p) return NULL;
@@ -22,24 +56,8 @@ AstNode *parse_program(Parser *p, ParseError *err) {
     Span first_span = {0}, last_span = {0};
     bool have_any = false;
 
-    for (;;) {
-        /* If there's an error already recorded, stop parsing.
-           parse_declaration sets err on failure. */
-        if (err && err->message) return NULL;
-
-        AstNode *decl = parse_declaration(p, err);
-        if (!decl) break; /* no (more) declarations or parse error produced */
-
-        if (dynarray_push_value(program->data.program.decls, &decl) != 0) {
-            if (err) create_parse_error(err, p, "out of memory adding declaration to program", NULL);
-            return NULL;
-        }
-
-        if (!have_any) {
-            first_span = decl->span;
-            have_any = true;
-        }
-        last_span = decl->span;
+    if (!parse_program_decls(p, program, err, &first_span, &last_span, &have_any)) {
+        return NULL;
     }
 
     /* If parse_declaration produced an error earlier, we've already returned. Now check for trailing tokens. */
@@ -51,14 +69,7 @@ AstNode *parse_program(Parser *p, ParseError *err) {
         return NULL;
     }
 
-    if (have_any) program->span = span_join(&first_span, &last_span);
-    else if (p->tokens && p->tokens->count > 0) {
-        Token *first = (Token*)dynarray_get(p->tokens, 0);
-        program->span = first->span;
-    } else {
-        program->span = (Span){0,0,0,0};
-    }
-
+    set_program_span(p, program, have_any, first_span, last_span);
     return program;
 }
 

@@ -1,9 +1,57 @@
 #include "codegen_internal.h"
 #include "sema/type_utils.h"
 
+static LLVMTypeRef *collect_llvm_param_types(CodegenContext *ctx, Type *fn_type, bool sret, size_t *out_count) {
+    size_t param_count = fn_type->as.func.param_count;
+    size_t llvm_param_count = param_count + (sret ? 1 : 0);
+    LLVMTypeRef *llvm_params = xmalloc(sizeof(LLVMTypeRef) * llvm_param_count);
+
+    size_t idx = 0;
+    if (sret) {
+        llvm_params[idx++] = LLVMPointerType(get_llvm_type(ctx, fn_type->as.func.return_type), 0);
+    }
+
+    for (size_t i = 0; i < param_count; i++) {
+        Type *param_ty = fn_type->as.func.params[i];
+        if (type_is_indirect(ctx, param_ty)) {
+            llvm_params[idx++] = LLVMPointerType(get_llvm_type(ctx, param_ty), 0);
+        } else {
+            llvm_params[idx++] = get_llvm_type(ctx, param_ty);
+        }
+    }
+
+    *out_count = llvm_param_count;
+    return llvm_params;
+}
+
+static void apply_function_attributes(CodegenContext *ctx, LLVMValueRef func, Type *fn_type, bool sret) {
+    if (sret) {
+        LLVMAddAttributeAtIndex(func, 1, LLVMCreateTypeAttribute(ctx->context, 
+            LLVMGetEnumAttributeKindForName("sret", 4), get_llvm_type(ctx, fn_type->as.func.return_type)));
+    }
+
+    size_t idx = sret ? 1 : 0;
+    size_t param_count = fn_type->as.func.param_count;
+    for (size_t i = 0; i < param_count; i++) {
+        if (type_is_indirect(ctx, fn_type->as.func.params[i])) {
+            LLVMTypeRef param_ty = get_llvm_type(ctx, fn_type->as.func.params[i]);
+            LLVMAddAttributeAtIndex(func, (unsigned)(idx + i + 1), LLVMCreateTypeAttribute(ctx->context, 
+                LLVMGetEnumAttributeKindForName("byval", 5), param_ty));
+        }
+    }
+}
+
+static char *get_mangled_func_name(CodegenContext *ctx, AstNode *decl) {
+    AstFunctionDeclaration *fdecl = &decl->data.function_declaration;
+    if (fdecl->intern_result && fdecl->intern_result->key) {
+        CompilationUnit *u = module_loader_get_unit(ctx->loader, decl->filename);
+        return mangle_name(ctx, u, fdecl->intern_result, decl->type);
+    }
+    return NULL;
+}
+
 static void codegen_func_proto(CodegenContext *ctx, AstNode *decl) {
-    AstFunctionDeclaration *fdecl       = &decl->data.function_declaration;
-    Type                   *fn_type_sema = decl->type;
+    Type *fn_type_sema = decl->type;
 
     if (!fn_type_sema || fn_type_sema->kind != TYPE_FUNCTION) {
         ICE("Function declaration missing type or has incorrect type kind: %d", fn_type_sema ? fn_type_sema->kind : -1);
@@ -13,49 +61,16 @@ static void codegen_func_proto(CodegenContext *ctx, AstNode *decl) {
     bool sret = type_is_indirect(ctx, fn_type_sema->as.func.return_type);
     LLVMTypeRef ret_type = sret ? LLVMVoidTypeInContext(ctx->context) : get_llvm_type(ctx, fn_type_sema->as.func.return_type);
     
-    size_t param_count = fn_type_sema->as.func.param_count;
-    size_t llvm_param_count = param_count + (sret ? 1 : 0);
-    LLVMTypeRef *llvm_params = xmalloc(sizeof(LLVMTypeRef) * llvm_param_count);
+    size_t llvm_param_count = 0;
+    LLVMTypeRef *llvm_params = collect_llvm_param_types(ctx, fn_type_sema, sret, &llvm_param_count);
 
-    size_t idx = 0;
-    if (sret) {
-        llvm_params[idx++] = LLVMPointerType(get_llvm_type(ctx, fn_type_sema->as.func.return_type), 0);
-    }
-
-    for (size_t i = 0; i < param_count; i++) {
-        Type *param_ty = fn_type_sema->as.func.params[i];
-        if (type_is_indirect(ctx, param_ty)) {
-            llvm_params[idx++] = LLVMPointerType(get_llvm_type(ctx, param_ty), 0);
-        } else {
-            llvm_params[idx++] = get_llvm_type(ctx, param_ty);
-        }
-    }
-
-    const char *name           = "anon_func";
-    char       *allocated_name = NULL;
-    if (fdecl->intern_result && fdecl->intern_result->key) {
-        CompilationUnit *u = module_loader_get_unit(ctx->loader, decl->filename);
-        allocated_name = mangle_name(ctx, u, fdecl->intern_result, decl->type);
-        name = allocated_name;
-    }
+    char *allocated_name = get_mangled_func_name(ctx, decl);
+    const char *name = allocated_name ? allocated_name : "anon_func";
 
     LLVMTypeRef func_type = LLVMFunctionType(ret_type, llvm_params, (unsigned)llvm_param_count, 0);
     LLVMValueRef func = LLVMAddFunction(ctx->module, name, func_type);
     
-    // Add attributes for sret/byval
-    if (sret) {
-        LLVMAddAttributeAtIndex(func, 1, LLVMCreateTypeAttribute(ctx->context, 
-            LLVMGetEnumAttributeKindForName("sret", 4), get_llvm_type(ctx, fn_type_sema->as.func.return_type)));
-    }
-
-    idx = sret ? 1 : 0;
-    for (size_t i = 0; i < param_count; i++) {
-        if (type_is_indirect(ctx, fn_type_sema->as.func.params[i])) {
-            LLVMTypeRef param_ty = get_llvm_type(ctx, fn_type_sema->as.func.params[i]);
-            LLVMAddAttributeAtIndex(func, (unsigned)(idx + i + 1), LLVMCreateTypeAttribute(ctx->context, 
-                LLVMGetEnumAttributeKindForName("byval", 5), param_ty));
-        }
-    }
+    apply_function_attributes(ctx, func, fn_type_sema, sret);
 
     if (allocated_name) free(allocated_name);
     if (llvm_params)     free(llvm_params);

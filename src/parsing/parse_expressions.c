@@ -9,21 +9,32 @@
 #include <math.h>
 #include <string.h>
 
+static inline int detect_base(const char *s, size_t len, size_t *start) {
+    if (len > 2 && s[0] == '0') {
+        if (s[1] == 'x' || s[1] == 'X') {
+            *start = 2;
+            return 16;
+        } else if (s[1] == 'b' || s[1] == 'B') {
+            *start = 2;
+            return 2;
+        }
+    }
+    *start = 0;
+    return 10;
+}
+
+static inline int char_to_digit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
 static inline bool parse_int_lit(const char *s, size_t len, long long *out) {
     if (len == 0) return false;
     
-    int base = 10;
     size_t start = 0;
-
-    if (len > 2 && s[0] == '0') {
-        if (s[1] == 'x' || s[1] == 'X') {
-            base = 16;
-            start = 2;
-        } else if (s[1] == 'b' || s[1] == 'B') {
-            base = 2;
-            start = 2;
-        }
-    }
+    int base = detect_base(s, len, &start);
 
     uint64_t val = 0;
     bool any_digits = false;
@@ -31,19 +42,13 @@ static inline bool parse_int_lit(const char *s, size_t len, long long *out) {
     for (size_t i = start; i < len; i++) {
         if (s[i] == '_') continue; // Support underscores
 
-        unsigned int d = 0;
-        char c = s[i];
-        if (c >= '0' && c <= '9') d = (unsigned int)(c - '0');
-        else if (c >= 'a' && c <= 'f') d = (unsigned int)(10 + (c - 'a'));
-        else if (c >= 'A' && c <= 'F') d = (unsigned int)(10 + (c - 'A'));
-        else return false; // invalid char
-
-        if (d >= (unsigned int)base) return false;
+        int d = char_to_digit(s[i]);
+        if (d == -1 || d >= base) return false; // invalid char
 
         // Check overflow
-        if (val > (ULLONG_MAX - d) / (unsigned int)base) return false;
+        if (val > (ULLONG_MAX - (unsigned int)d) / (unsigned int)base) return false;
 
-        val = val * (unsigned int)base + d;
+        val = val * (unsigned int)base + (unsigned int)d;
         any_digits = true;
     }
 
