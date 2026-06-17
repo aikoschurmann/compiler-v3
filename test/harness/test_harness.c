@@ -31,6 +31,11 @@ static int g_tests_failed = 0;
 static char g_log_buffer[LOG_BUFFER_SIZE];
 static size_t g_log_len = 0;
 
+static uint32_t g_test_seed = 0;
+
+uint32_t test_get_seed(void) { return g_test_seed; }
+void test_set_seed(uint32_t seed) { g_test_seed = seed; srand(seed); }
+
 void test_clear_log(void) {
     g_log_len = 0;
     g_log_buffer[0] = '\0';

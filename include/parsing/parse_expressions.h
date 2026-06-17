@@ -4,6 +4,7 @@
 #include "parser.h"
 
 AstNode *parse_expression(Parser *p, ParseError *err);
+bool parse_int_lit(const char *s, size_t len, unsigned long long *out);
 AstNode *parse_assignment(Parser *p, AstNode *lhs, ParseError *err);
 AstNode *parse_logical_or(Parser *p, ParseError *err);
 AstNode *parse_logical_and(Parser *p, ParseError *err);

@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <math.h>
 #include <string.h>
+#include <stdint.h>
 
 static inline int detect_base(const char *s, size_t len, size_t *start) {
     if (len > 2 && s[0] == '0') {
@@ -30,7 +31,7 @@ static inline int char_to_digit(char c) {
     return -1;
 }
 
-static inline bool parse_int_lit(const char *s, size_t len, long long *out) {
+bool parse_int_lit(const char *s, size_t len, unsigned long long *out) {
     if (len == 0) return false;
     
     size_t start = 0;
@@ -39,23 +40,28 @@ static inline bool parse_int_lit(const char *s, size_t len, long long *out) {
     uint64_t val = 0;
     bool any_digits = false;
 
+    // Pre-calculate strict bounds for the specific base
+    uint64_t max_val = UINT64_MAX / base;
+    uint64_t rem = UINT64_MAX % base;
+
     for (size_t i = start; i < len; i++) {
         if (s[i] == '_') continue; // Support underscores
 
         int d = char_to_digit(s[i]);
         if (d == -1 || d >= base) return false; // invalid char
 
-        // Check overflow
-        if (val > (ULLONG_MAX - (unsigned int)d) / (unsigned int)base) return false;
+        // Strict, cross-platform 64-bit overflow check
+        if (val > max_val || (val == max_val && (uint64_t)d > rem)) {
+            return false; 
+        }
 
-        val = val * (unsigned int)base + (unsigned int)d;
+        val = val * (uint64_t)base + (uint64_t)d;
         any_digits = true;
     }
 
     if (!any_digits) return false;
-    if (base == 10 && val > LLONG_MAX) return false;
 
-    *out = (long long)val;
+    *out = val;
     return true;
 }
 
@@ -578,9 +584,9 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
 
             switch (token->type) {
                 case TOK_INT_LIT: {
-                    long long v;
+                    unsigned long long v;
                     if (parse_int_lit(token->slice.ptr, token->slice.len, &v)) {
-                        literal->data.literal.value.int_val = v;
+                        literal->data.literal.value.int_val = (long long)v;
                     } else {
                         create_parse_error(err, p, "invalid integer literal or overflow", token);
                         return NULL;

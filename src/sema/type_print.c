@@ -27,19 +27,27 @@
 #define COL_NUM            YELLOW
 
 static void print_primitive_kind(FILE *out, PrimitiveKind kind) {
-    switch (kind) {
-        case PRIM_I8:   fprintf(out, "i8"); break;
-        case PRIM_I16:  fprintf(out, "i16"); break;
-        case PRIM_I32:  fprintf(out, "i32"); break;
-        case PRIM_I64:  fprintf(out, "i64"); break;
-        case PRIM_U8:   fprintf(out, "u8"); break;
-        case PRIM_U16:  fprintf(out, "u16"); break;
-        case PRIM_U32:  fprintf(out, "u32"); break;
-        case PRIM_U64:  fprintf(out, "u64"); break;
-        case PRIM_F32:  fprintf(out, "f32"); break;
-        case PRIM_F64:  fprintf(out, "f64"); break;
-        case PRIM_BOOL: fprintf(out, "bool"); break;
-        case PRIM_CHAR: fprintf(out, "char"); break;
+    static const char *primitive_names[] = {
+        [PRIM_I8]   = "i8",
+        [PRIM_I16]  = "i16",
+        [PRIM_I32]  = "i32",
+        [PRIM_I64]  = "i64",
+        [PRIM_U8]   = "u8",
+        [PRIM_U16]  = "u16",
+        [PRIM_U32]  = "u32",
+        [PRIM_U64]  = "u64",
+        [PRIM_F32]  = "f32",
+        [PRIM_F64]  = "f64",
+        [PRIM_BOOL] = "bool",
+        [PRIM_CHAR] = "char",
+    };
+
+    if (kind >= 0 && kind < (PrimitiveKind)(sizeof(primitive_names) / sizeof(primitive_names[0]))) {
+        const char *name = primitive_names[kind];
+        if (name) {
+            fprintf(out, "%s", name);
+            return;
+        }
     }
 }
 

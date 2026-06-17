@@ -5,38 +5,43 @@
 
 /* Helper functions to convert enums to strings */
 static const char *node_type_to_string(AstNodeType type) {
-    switch (type) {
-        case AST_PROGRAM: return "Program";
-        case AST_VARIABLE_DECLARATION: return "VariableDeclaration";
-        case AST_FUNCTION_DECLARATION: return "FunctionDeclaration";
-        case AST_PARAM: return "Parameter";
-        case AST_STRUCT_DECLARATION: return "StructDeclaration";
-        case AST_IMPORT_DECLARATION: return "ImportDeclaration";
-        case AST_INTRINSIC: return "IntrinsicCall";
-        case AST_BLOCK: return "Block";
-        case AST_IF_STATEMENT: return "IfStatement";
-        case AST_WHILE_STATEMENT: return "WhileStatement";
-        case AST_FOR_STATEMENT: return "ForStatement";
-        case AST_RETURN_STATEMENT: return "ReturnStatement";
-        case AST_BREAK_STATEMENT: return "BreakStatement";
-        case AST_CONTINUE_STATEMENT: return "ContinueStatement";
-        case AST_DEFER_STATEMENT: return "DeferStatement";
-        case AST_EXPR_STATEMENT: return "ExpressionStatement";
-        case AST_LITERAL: return "Literal";
-        case AST_IDENTIFIER: return "Identifier";
-        case AST_BINARY_EXPR: return "BinaryExpression";
-        case AST_UNARY_EXPR: return "UnaryExpression";
-        case AST_POSTFIX_EXPR: return "PostfixExpression";
-        case AST_ASSIGNMENT_EXPR: return "AssignmentExpression";
-        case AST_CALL_EXPR: return "CallExpression";
-        case AST_SUBSCRIPT_EXPR: return "SubscriptExpression";
-        case AST_MEMBER_EXPR: return "MemberExpression";
-        case AST_STRUCT_LITERAL: return "StructLiteral";
-        case AST_CAST: return "CastExpression";
-        case AST_TYPE: return "Type";
-        case AST_INITIALIZER_LIST: return "InitializerList";
-        default: return "Unknown";
+    static const char *node_type_names[] = {
+        [AST_PROGRAM] = "Program",
+        [AST_VARIABLE_DECLARATION] = "VariableDeclaration",
+        [AST_FUNCTION_DECLARATION] = "FunctionDeclaration",
+        [AST_PARAM] = "Parameter",
+        [AST_STRUCT_DECLARATION] = "StructDeclaration",
+        [AST_IMPORT_DECLARATION] = "ImportDeclaration",
+        [AST_INTRINSIC] = "IntrinsicCall",
+        [AST_BLOCK] = "Block",
+        [AST_IF_STATEMENT] = "IfStatement",
+        [AST_WHILE_STATEMENT] = "WhileStatement",
+        [AST_FOR_STATEMENT] = "ForStatement",
+        [AST_RETURN_STATEMENT] = "ReturnStatement",
+        [AST_BREAK_STATEMENT] = "BreakStatement",
+        [AST_CONTINUE_STATEMENT] = "ContinueStatement",
+        [AST_DEFER_STATEMENT] = "DeferStatement",
+        [AST_EXPR_STATEMENT] = "ExpressionStatement",
+        [AST_LITERAL] = "Literal",
+        [AST_IDENTIFIER] = "Identifier",
+        [AST_BINARY_EXPR] = "BinaryExpression",
+        [AST_UNARY_EXPR] = "UnaryExpression",
+        [AST_POSTFIX_EXPR] = "PostfixExpression",
+        [AST_ASSIGNMENT_EXPR] = "AssignmentExpression",
+        [AST_CALL_EXPR] = "CallExpression",
+        [AST_SUBSCRIPT_EXPR] = "SubscriptExpression",
+        [AST_MEMBER_EXPR] = "MemberExpression",
+        [AST_STRUCT_LITERAL] = "StructLiteral",
+        [AST_CAST] = "CastExpression",
+        [AST_TYPE] = "Type",
+        [AST_INITIALIZER_LIST] = "InitializerList",
+    };
+
+    if (type >= 0 && type < (AstNodeType)(sizeof(node_type_names) / sizeof(node_type_names[0]))) {
+        const char *name = node_type_names[type];
+        if (name) return name;
     }
+    return "Unknown";
 }
 
 static const char *type_kind_to_string(AstTypeKind kind) {
