@@ -28,6 +28,11 @@ TEST_CASE_PRIO("Codegen: Loops", 40) {
 #define CODEGEN_EXIT(name, src, expected) \
     TEST_CASE_PRIO("Codegen/" name, 40) { ASSERT_EQ_INT(test_run_and_get_exit_code(src), expected); return 1; }
 
+#define CODEGEN_OUTPUT(name, src, expected_exit, expected_out) \
+    TEST_CASE_PRIO("Codegen/Output/" name, 40) { ASSERT(test_check_codegen_output(src, expected_exit, expected_out)); return 1; }
+
+CODEGEN_OUTPUT("print_hello", "fn main() -> i32 { print(\"Hello, World!\"); return 0; }", 0, "Hello, World!")
+
 #include "codegen_abi.inc"
 #include "codegen_alias.inc"
 #include "codegen_struct.inc"
@@ -39,5 +44,6 @@ TEST_CASE_PRIO("Codegen: Loops", 40) {
 #include "codegen_intrinsics.inc"
 #include "codegen_defer.inc"
 #include "codegen_generics.inc"
+#include "codegen_std.inc"
 
 #undef CODEGEN_EXIT

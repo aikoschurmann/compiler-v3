@@ -28,3 +28,5 @@ bool test_is_parse_valid(const char *src);
 bool test_is_sema_valid(const char *src);
 bool test_check_sema_error(const char *src, TypeErrorKind kind);
 int test_run_and_get_exit_code(const char *src);
+bool test_check_codegen_output(const char *src, int expected_exit, const char *expected_output);
+bool test_check_parse_error(const char *src, const char *expected_msg_substring);

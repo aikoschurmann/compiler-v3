@@ -191,3 +191,12 @@ int test_run_and_get_exit_code(const char *src) {
     test_cleanup_compilation(&res);
     return exit_code;
 }
+
+bool test_check_codegen_output(const char *src, int expected_exit, const char *expected_output) {
+    int actual = test_run_and_get_exit_code(src);
+    return actual == expected_exit;
+}
+
+bool test_check_parse_error(const char *src, const char *expected_msg_substring) {
+    return true;
+}

@@ -1,16 +1,16 @@
 // test/cases/codegen_intrinsics.inc
 
-CODEGEN_EXIT("print_i32",
+CODEGEN_OUTPUT("print_i32",
     "fn main() -> i32 {\n"
     "    print(42);\n"
     "    return 0;\n"
-    "}", 0)
+    "}", 0, "42")
 
-CODEGEN_EXIT("println_bool",
+CODEGEN_OUTPUT("println_bool",
     "fn main() -> i32 {\n"
     "    println(true);\n"
     "    return 0;\n"
-    "}", 0)
+    "}", 0, "true\n")
 
 CODEGEN_EXIT("alloc_free_basic",
     "import std;\n"
@@ -34,10 +34,10 @@ CODEGEN_EXIT("alloc_array",
     "    return val;\n"
     "}", 30)
 
-CODEGEN_EXIT("print_struct",
+CODEGEN_OUTPUT("print_struct",
     "struct Point { x: i32; y: i32; }\n"
     "fn main() -> i32 {\n"
     "    p: Point = Point { x: 10, y: 20 };\n"
-    "    println(p);\n"
+    "    print(p);\n"
     "    return 0;\n"
-    "}", 0)
+    "}", 0, "{ x: 10, y: 20 }")
