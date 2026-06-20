@@ -16,4 +16,10 @@ impl Allocator {
     pub fn free(self: *Allocator, ptr: *void) -> void {
         self._free(self.ctx, ptr);
     }
+
+    pub fn clone<T>(self: *Allocator, src: T[]) -> T[] {
+        dest: T[] = @alloc(T, self, src.len);
+        for (i: i64 = 0; i < src.len; i += 1) { dest[i] = src[i]; }
+        return dest;
+    }
 }
