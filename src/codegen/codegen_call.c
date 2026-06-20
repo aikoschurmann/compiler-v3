@@ -125,7 +125,10 @@ static void codegen_intrinsic_print_value(CodegenContext *ctx, LLVMValueRef val,
     // -------------------------------------------------------------------------
     // 3. STRUCTS
     // -------------------------------------------------------------------------
-    else if (t->kind == TYPE_STRUCT) {
+    else if (t->kind == TYPE_STRUCT || t->kind == TYPE_GENERIC_INST) {
+        if (t->kind == TYPE_GENERIC_INST) {
+            t = t->as.generic_inst.concrete_type;
+        }
         codegen_intrinsic_print_str_lit(ctx, "{ ");
         for (size_t i = 0; i < t->as.struct_type.field_count; i++) {
             if (i > 0) codegen_intrinsic_print_str_lit(ctx, ", ");

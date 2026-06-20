@@ -40,7 +40,7 @@ static void mangle_type_recursive(char *buf, size_t *pos, size_t cap, Type *t) {
                 case PRIM_U64:  buf[(*pos)++] = 'U'; break; // 'U' for u-long
                 case PRIM_F32:  buf[(*pos)++] = 'f'; break;
                 case PRIM_F64:  buf[(*pos)++] = 'F'; break;
-                case PRIM_BOOL: buf[(*pos)++] = 'b'; break;
+                case PRIM_BOOL: buf[(*pos)++] = 'o'; break;
                 case PRIM_CHAR: buf[(*pos)++] = 'c'; break;
             }
             break;
@@ -66,6 +66,13 @@ static void mangle_type_recursive(char *buf, size_t *pos, size_t cap, Type *t) {
                 *pos += snprintf(buf + *pos, cap - *pos, "anon");
             }
             break;
+        case TYPE_GENERIC_INST:
+            if (t->as.generic_inst.concrete_type) {
+                mangle_type_recursive(buf, pos, cap, t->as.generic_inst.concrete_type);
+            } else {
+                mangle_type_recursive(buf, pos, cap, t->as.generic_inst.base);
+            }
+            break;
         default: break;
     }
 }
@@ -74,19 +81,21 @@ char* mangle_name(CodegenContext *ctx, CompilationUnit *unit, InternResult *symb
     Slice *s = (Slice*)symbol_name->key;
 
     // Special cases: 'main' and functions with no unit (intrinsics/special) are never mangled
-    if ((s->len == 4 && strncmp(s->ptr, "main", 4) == 0) || !unit || !unit->logical_path) {
+    if ((s->len == 4 && strncmp(s->ptr, "main", 4) == 0) || !unit) {
         char *name = xmalloc(s->len + 1);
         memcpy(name, s->ptr, s->len);
         name[s->len] = '\0';
         return name;
     }
 
+    const char *log_path = unit->logical_path ? unit->logical_path : "main";
+
     // Build the mangled name: __mod_<module_path>_<symbol_name>.<signature>
-    size_t cap = strlen(unit->logical_path) + s->len + 256;
+    size_t cap = strlen(log_path) + s->len + 256;
     char *mangled = xmalloc(cap);
 
     // Replace dots with underscores in logical path
-    char *log_path_fixed = xstrdup(unit->logical_path);
+    char *log_path_fixed = xstrdup(log_path);
     for (char *p = log_path_fixed; *p; p++) if (*p == '.') *p = '_';
 
     size_t pos = snprintf(mangled, cap, "__mod_%s_%.*s", log_path_fixed, (int)s->len, s->ptr);
@@ -108,7 +117,9 @@ char* mangle_name(CodegenContext *ctx, CompilationUnit *unit, InternResult *symb
 }
 
 bool struct_field_index(Type *struct_type, const char *field_name, size_t *out_index) {
-    
+    if (struct_type->kind == TYPE_GENERIC_INST) {
+        struct_type = struct_type->as.generic_inst.concrete_type;
+    }
     for (size_t i = 0; i < struct_type->as.struct_type.field_count; i++) {
         Slice *name = (Slice*)struct_type->as.struct_type.fields[i].name->key;
         if (name->len == strlen(field_name) && memcmp(name->ptr, field_name, name->len) == 0) {
@@ -120,6 +131,9 @@ bool struct_field_index(Type *struct_type, const char *field_name, size_t *out_i
 }
 
 bool get_struct_field_index(Type *struct_type, InternResult *field_name, size_t *out_index) {
+    if (struct_type->kind == TYPE_GENERIC_INST) {
+        struct_type = struct_type->as.generic_inst.concrete_type;
+    }
     for (size_t i = 0; i < struct_type->as.struct_type.field_count; i++) {
         if (struct_type->as.struct_type.fields[i].name == field_name) {
             if (out_index) *out_index = i;

@@ -11,7 +11,7 @@ static LLVMValueRef codegen_lvalue_identifier(CodegenContext *ctx, AstNode *expr
     
     // 1a. Try local variables first
     if (ident->intern_result) {
-        void *key = (void*)(intptr_t)ident->intern_result->entry->dense_index;
+        void *key = (void*)(intptr_t)(ident->intern_result->entry->dense_index + 1);
         LLVMValueRef val = codegen_map_get(ctx->locals, key);
         if (val) return val;
     }
@@ -19,7 +19,10 @@ static LLVMValueRef codegen_lvalue_identifier(CodegenContext *ctx, AstNode *expr
     // 1b. Try global symbols
     CompilationUnit *current_unit = module_loader_get_unit(ctx->loader, expr->filename);
     if (current_unit && current_unit->global_scope) {
-        Symbol *sym = scope_lookup_symbol(current_unit->global_scope, ident->intern_result, expr->filename);
+        Symbol *sym = ident->symbol; // Use the symbol resolved by semantic analysis
+        if (!sym) {
+            sym = scope_lookup_symbol(current_unit->global_scope, ident->intern_result, expr->filename);
+        }
         if (sym) {
             while (sym && sym->kind == SYMBOL_VALUE_ALIAS) {
                 sym = sym->target_symbol;
@@ -82,7 +85,7 @@ static LLVMValueRef codegen_lvalue_member(CodegenContext *ctx, AstNode *expr) {
     if (mem_expr->symbol) {
         CompilationUnit *u = module_loader_get_unit(ctx->loader, mem_expr->symbol->filename);
         Type *fn_type = (mem_expr->symbol->kind == SYMBOL_VALUE_FUNCTION) ? mem_expr->symbol->type : NULL;
-        char *mangled = mangle_name(ctx, u, mem_expr->member, fn_type);
+        char *mangled = mangle_name(ctx, u, mem_expr->symbol->name_rec, fn_type);
         LLVMValueRef val = LLVMGetNamedFunction(ctx->module, mangled);
         if (!val) val = LLVMGetNamedGlobal(ctx->module, mangled);
         free(mangled);
@@ -103,7 +106,10 @@ static LLVMValueRef codegen_lvalue_member(CodegenContext *ctx, AstNode *expr) {
         unsigned idx = (mem_expr->member == ctx->store->kw_len) ? 1 : 0;
         return LLVMBuildStructGEP2(ctx->builder, struct_ty, target_lvalue, idx, "slice_gep");
     } 
-    else if (underlying->kind == TYPE_STRUCT) {
+    else if (underlying->kind == TYPE_STRUCT || underlying->kind == TYPE_GENERIC_INST) {
+        if (underlying->kind == TYPE_GENERIC_INST) {
+            underlying = underlying->as.generic_inst.concrete_type;
+        }
         size_t idx;
         if (!get_struct_field_index(underlying, mem_expr->member, &idx)) ICE_AT(expr, "Field index not found");
         return LLVMBuildStructGEP2(ctx->builder, struct_ty, target_lvalue, (unsigned)idx, "field_gep");
@@ -123,7 +129,7 @@ static LLVMValueRef codegen_lvalue_literal(CodegenContext *ctx, AstNode *expr) {
 
 LLVMValueRef codegen_lvalue(CodegenContext *ctx, AstNode *expr) {
     if (!expr) return NULL;
-    if (!expr->type) ICE_AT(expr, "LValue node missing type.");
+    if (!expr->type) ICE_AT(expr, "LValue node missing type. Node type: %d", expr->node_type);
 
     switch (expr->node_type) {
         case AST_IDENTIFIER:       return codegen_lvalue_identifier(ctx, expr);

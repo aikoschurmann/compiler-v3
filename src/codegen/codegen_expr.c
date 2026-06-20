@@ -320,6 +320,9 @@ LLVMValueRef codegen_expr(CodegenContext *ctx, AstNode *expr) {
         case AST_SUBSCRIPT_EXPR:   return codegen_expr_subscript(ctx, expr);
         case AST_INTRINSIC:        return codegen_expr_intrinsic(ctx, expr);
         
+        case AST_GENERIC_INST_EXPR:
+            return codegen_expr(ctx, expr->data.generic_inst_expr.base);
+            
         case AST_BINARY_EXPR:
         case AST_UNARY_EXPR:
         case AST_ASSIGNMENT_EXPR:

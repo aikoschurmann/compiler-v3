@@ -318,7 +318,7 @@ void codegen_statement(CodegenContext *ctx, AstNode *stmt) {
             LLVMValueRef alloca = create_entry_block_alloca(ctx, ty, "var");
 
             if (vdecl->intern_result) {
-                void *key = (void*)(intptr_t)vdecl->intern_result->entry->dense_index;
+                void *key = (void*)(intptr_t)(vdecl->intern_result->entry->dense_index + 1);
                 codegen_map_put(ctx->locals, key, alloca);
             }
             if (vdecl->initializer) {

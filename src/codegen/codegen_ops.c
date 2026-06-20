@@ -256,7 +256,9 @@ LLVMValueRef codegen_expr_ops(CodegenContext *ctx, AstNode *expr) {
             if (new_val) LLVMBuildStore(ctx->builder, new_val, ptr);
             return (ue->op == OP_POST_INC || ue->op == OP_POST_DEC) ? val : new_val;
         }
+        ICE("codegen_expr_ops: unhandled unary operator %d", ue->op);
     }
 
+    ICE("codegen_expr_ops: unhandled node type %d", expr->node_type);
     return NULL;
 }

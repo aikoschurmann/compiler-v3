@@ -95,7 +95,7 @@ static void codegen_var_proto(CodegenContext *ctx, AstNode *decl) {
 
     if (vdecl->intern_result) {
         hashmap_put(ctx->globals,
-                    (void*)(intptr_t)vdecl->intern_result->entry->dense_index,
+                    (void*)(intptr_t)(vdecl->intern_result->entry->dense_index + 1),
                     gvar, ptr_hash, ptr_cmp);
     }
     if (allocated_name) free(allocated_name);
@@ -106,6 +106,14 @@ void codegen_decl_proto(CodegenContext *ctx, AstNode *decl) {
         codegen_func_proto(ctx, decl);
     } else if (decl->node_type == AST_VARIABLE_DECLARATION) {
         codegen_var_proto(ctx, decl);
+    } else if (decl->node_type == AST_IMPL_DECLARATION) {
+        AstImplDeclaration *impl = &decl->data.impl_declaration;
+        if (impl->methods) {
+            for (size_t i = 0; i < impl->methods->count; i++) {
+                AstNode *method = *(AstNode**)dynarray_get(impl->methods, i);
+                codegen_decl_proto(ctx, method);
+            }
+        }
     }
 }
 
@@ -168,11 +176,13 @@ static void codegen_func_body(CodegenContext *ctx, AstNode *decl) {
             }
 
             if (param->name_idx != -1) {
-                codegen_map_put(ctx->locals, (void*)(intptr_t)param->name_idx, storage);
+                codegen_map_put(ctx->locals, (void*)(intptr_t)(param->name_idx + 1), storage);
             }
         }
         
-        codegen_statement(ctx, fdecl->body);
+        if (fdecl->body) {
+            codegen_statement(ctx, fdecl->body);
+        }
 
         LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
         if (current_block && !LLVMGetBasicBlockTerminator(current_block)) {
@@ -241,6 +251,14 @@ void codegen_decl_body(CodegenContext *ctx, AstNode *decl) {
                 if (init_val && LLVMIsConstant(init_val)) LLVMSetInitializer(gvar, init_val);
             }
             if (allocated_name) free(allocated_name);
+        }
+    } else if (decl->node_type == AST_IMPL_DECLARATION) {
+        AstImplDeclaration *impl = &decl->data.impl_declaration;
+        if (impl->methods) {
+            for (size_t i = 0; i < impl->methods->count; i++) {
+                AstNode *method = *(AstNode**)dynarray_get(impl->methods, i);
+                codegen_decl_body(ctx, method);
+            }
         }
     }
 }

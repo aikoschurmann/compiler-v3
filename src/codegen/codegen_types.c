@@ -32,7 +32,6 @@ LLVMTypeRef get_llvm_function_type(CodegenContext *ctx, Type *t) {
 bool type_is_address_only(Type *t) {
     if (!t) ICE("type_is_address_only: NULL type reached codegen");
     switch (t->kind) {
-        case TYPE_FUNCTION: return true;                         // functions decay to pointer
         case TYPE_ARRAY:    return true;                         // [N]T lives at its address
         case TYPE_SLICE:    return false;                        // T[] (slice) is loaded as a value
         case TYPE_VOID:     return true;                         // nothing to load
@@ -41,7 +40,7 @@ bool type_is_address_only(Type *t) {
 }
 
 bool type_is_indirect(CodegenContext *ctx, Type *t) {
-    if (t->kind != TYPE_STRUCT) return false;
+    if (t->kind != TYPE_STRUCT && t->kind != TYPE_GENERIC_INST) return false;
     LLVMTypeRef llvm_ty = get_llvm_type(ctx, t);
     // Threshold: 16 bytes (2 x 64-bit registers)
     return LLVMABISizeOfType(ctx->target_data, llvm_ty) > 16;
@@ -124,6 +123,13 @@ LLVMTypeRef get_llvm_type(CodegenContext *ctx, Type *t) {
             }
             return struct_ty;
         }
+        case TYPE_GENERIC_INST:
+            if (t->as.generic_inst.concrete_type) {
+                res = get_llvm_type(ctx, t->as.generic_inst.concrete_type);
+            } else {
+                ICE("get_llvm_type: TYPE_GENERIC_INST lacks concrete_type");
+            }
+            break;
         default:
             ICE("get_llvm_type: unrecognized type kind %d", t->kind);
     }
