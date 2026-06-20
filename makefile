@@ -161,3 +161,15 @@ run-dev: dev
 
 test: $(OUT_DIR)/test_runner
 	$(Q)./$(OUT_DIR)/test_runner
+test-asan:
+	$(Q)$(CC) $(CFLAGS_ASAN) -Itest/harness -Itest/helpers $(SRC_FILES) $(TEST_SRC_FILES) -o $(OUT_DIR)/test_runner-asan $(LDFLAGS_ASAN)
+	@echo "Built ASAN binary: ./$(OUT_DIR)/test_runner-asan"
+test-asan: $(COMMON_OBJ_FILES_ASAN) $(TEST_OBJ_FILES_ASAN)
+	@mkdir -p $(OUT_DIR)
+	@echo "  LD      $@"
+	$(Q)$(CC) $^ -o $(OUT_DIR)/test_runner-asan $(LDFLAGS_ASAN)
+
+$(OBJ_DIR)/asan/test/%.o: test/%.c
+	@mkdir -p $(dir $@)
+	@echo "  CC      $<"
+	$(Q)$(CC) $(CFLAGS_ASAN) $(CFLAGS_TEST) -c $< -o $@

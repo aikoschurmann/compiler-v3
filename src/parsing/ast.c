@@ -1041,6 +1041,23 @@ static DynArray *clone_import_symbols(DynArray *src, Arena *arena) {
     return dst;
 }
 
+static DynArray* clone_variants(DynArray *src, Arena *arena) {
+    if (!src) return NULL;
+    DynArray *dst = arena_alloc(arena, sizeof(DynArray));
+    dynarray_init_in_arena(dst, arena, sizeof(AstEnumVariant*), src->count);
+    for (size_t i = 0; i < src->count; i++) {
+        AstEnumVariant *variant = *(AstEnumVariant**)dynarray_get(src, i);
+        if (!variant) continue;
+        AstEnumVariant *cloned_variant = arena_alloc(arena, sizeof(AstEnumVariant));
+        if (cloned_variant) {
+            cloned_variant->name = variant->name;
+            cloned_variant->value = ast_clone_node(variant->value, arena);
+            dynarray_push_value(dst, &cloned_variant);
+        }
+    }
+    return dst;
+}
+
 AstNode *ast_clone_node(AstNode *node, Arena *arena) {
     if (!node) return NULL;
 
@@ -1077,6 +1094,10 @@ AstNode *ast_clone_node(AstNode *node, Arena *arena) {
             clone->data.struct_declaration.type_params = clone_dynarray_of_results(node->data.struct_declaration.type_params, arena);
             clone->data.struct_declaration.fields = clone_fields(node->data.struct_declaration.fields, arena);
             clone->data.struct_declaration.methods = clone_dynarray_of_nodes(node->data.struct_declaration.methods, arena);
+            break;
+
+        case AST_ENUM_DECLARATION:
+            clone->data.enum_declaration.variants = clone_variants(node->data.enum_declaration.variants, arena);
             break;
 
         case AST_IMPL_DECLARATION:

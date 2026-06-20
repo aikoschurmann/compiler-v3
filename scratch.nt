@@ -1,0 +1,12 @@
+enum Color {
+    Red,
+    Green,
+    Blue = 5,
+    Yellow
+}
+
+fn main() -> i32 {
+    c1: Color = Color.Red;
+    c2: Color = Color.Yellow;
+    return c2; // Should return 6 (since Red=0, Green=1, Blue=5, Yellow=6)
+}

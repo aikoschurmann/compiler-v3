@@ -1,0 +1,4 @@
+target create "./out/test_runner"
+process launch -- -f std_mem_clone
+bt
+quit

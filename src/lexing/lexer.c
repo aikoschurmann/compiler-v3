@@ -39,6 +39,7 @@ static const struct {
     {"import", TOK_IMPORT},
     {"alias", TOK_ALIAS},
     {"struct", TOK_STRUCT},
+    {"enum", TOK_ENUM},
     {"impl", TOK_IMPL},
     {"as", TOK_AS},
     {"i8", TOK_I8},

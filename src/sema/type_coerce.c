@@ -80,6 +80,10 @@ bool type_can_implicit_cast(Type *target, Type *source) {
         return can_implicit_cast_pointer(target, source);
     }
 
+    if (source->kind == TYPE_ENUM && target->kind == TYPE_PRIMITIVE) {
+        return type_is_integer(target);
+    }
+
     return false;
 }
 

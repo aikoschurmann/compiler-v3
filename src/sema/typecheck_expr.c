@@ -170,9 +170,9 @@ static Type* resolve_literal_type(TypeCheckContext *ctx, LiteralType lit_kind, T
     TypeStore *s = ctx->store;
     switch (lit_kind) {
         case INT_LITERAL:
-            // Numeric adaptation: Literals are polymorphic until they hit a concrete requirement.
             if (expected && type_is_float(expected)) return expected;
             if (expected && type_is_integer(expected)) return expected;
+            if (expected && expected->kind == TYPE_ENUM) return expected;
             return s->t_i64; // Default to i64
         case FLOAT_LITERAL:
             if (expected && type_is_float(expected)) return expected;
@@ -1445,7 +1445,7 @@ Type* check_binary(TypeCheckContext *ctx, Scope *scope, AstNode *expr, Type *exp
     } 
     else if (op == OP_EQ || op == OP_NEQ || op == OP_LT || op == OP_GT || op == OP_LE || op == OP_GE) {
         // Disallow struct/array equality for now
-        if (lhs->kind != TYPE_PRIMITIVE && lhs->kind != TYPE_POINTER) {
+        if (lhs->kind != TYPE_PRIMITIVE && lhs->kind != TYPE_POINTER && lhs->kind != TYPE_ENUM) {
              TypeError err = { .kind = TE_BINOP_MISMATCH, .span = expr->span, .filename = ctx->filename, .as.binop = { .op = op, .left = lhs, .right = rhs } };
              dynarray_push_value(ctx->errors, &err);
              return NULL;
@@ -1541,6 +1541,33 @@ static Type* check_member_expr(TypeCheckContext *ctx, Scope *scope, AstNode *exp
                 expr->type = ctx->store->t_i64;
                 return ctx->store->t_i64;
             } else {
+                const char *field_name = "<unknown>";
+                if (member_expr->member && member_expr->member->key) {
+                    field_name = ((Slice*)member_expr->member->key)->ptr;
+                }
+                TypeError err = { .kind = TE_FIELD_ACCESS, .span = expr->span, .filename = ctx->filename };
+                err.as.field.name = field_name;
+                err.as.field.type = underlying;
+                dynarray_push_value(ctx->errors, &err);
+                return NULL;
+            }
+        case TYPE_ENUM:
+            if (underlying->as.enum_type.variant_map) {
+                EnumVariant *variant = hashmap_get(underlying->as.enum_type.variant_map, member_expr->member->key, str_hash, str_cmp);
+                if (variant) {
+                    expr->node_type = AST_LITERAL;
+                    expr->data.literal.type = INT_LITERAL;
+                    expr->data.literal.value.int_val = variant->value;
+                    expr->is_foldable_const = 1;
+                    expr->is_llvm_const_safe = 1;
+                    expr->const_value.type = INT_LITERAL;
+                    expr->const_value.value.int_val = variant->value;
+                    expr->type = underlying;
+                    return underlying;
+                }
+            }
+            // Fallthrough if not found to report error
+            {
                 const char *field_name = "<unknown>";
                 if (member_expr->member && member_expr->member->key) {
                     field_name = ((Slice*)member_expr->member->key)->ptr;

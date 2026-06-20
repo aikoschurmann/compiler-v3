@@ -1,0 +1,11 @@
+import std;
+fn main() -> i32 {
+    src: i32[3];
+    src[0] = 1; src[1] = 2; src[2] = 3;
+    alloc: std.mem.Allocator = std.heap.allocator;
+    alloc_ref: *std.mem.Allocator = &alloc;
+    dst: i32[] = alloc_ref.clone<i32>(src);
+    val: i32 = dst[2];
+    @free(alloc_ref, dst);
+    return val;
+}

@@ -6,33 +6,35 @@ alias Arena     = std.arena.Arena;
 alias Vec       = std.vec.Vec;
 
 const NUM_VARS: i32 = 729;
-const VAL_UNASSIGNED: i8 = 0;
-const VAL_TRUE: i8       = 1;
-const VAL_FALSE: i8      = 2;
+enum Val {
+    Unassigned,
+    True,
+    False
+}
 
 struct Clause  { lits: i32[]; }
 struct Formula {
     clauses: Vec<Clause>;
-    assignment: i8[729];
+    assignment: Val[729];
     trail: Vec<i32>;
     var_to_clauses: Vec<Vec<i32>>;
 }
 
 fn sv(r: i32, c: i32, v: i32) -> i32 { return (r * 81) + (c * 9) + v + 1; }
 
-fn lit_val(assignment: *i8, lit: i32) -> i8 {
+fn lit_val(assignment: *Val, lit: i32) -> Val {
     if lit > 0 {
         return assignment[lit as i64 - 1];
     } else {
-        val: i8 = assignment[-lit as i64 - 1];
-        if val == VAL_UNASSIGNED { return VAL_UNASSIGNED; }
-        if val == VAL_TRUE { return VAL_FALSE; }
-        return VAL_TRUE;
+        val: Val = assignment[-lit as i64 - 1];
+        if val == Val.Unassigned { return Val.Unassigned; }
+        if val == Val.True { return Val.False; }
+        return Val.True;
     }
 }
 
 impl Formula {
-    fn assign(self: *Formula, var_idx: i32, val: i8) {
+    fn assign(self: *Formula, var_idx: i32, val: Val) {
         self.assignment[var_idx as i64 - 1] = val;
         self.trail.push(var_idx);
     }
@@ -68,19 +70,19 @@ impl Formula {
                 satisfied: bool = false;
 
                 for (j: i64 = 0; j < c.lits.len; j += 1) {
-                    v: i8 = lit_val(&self.assignment[0], c.lits[j]);
-                    if v == VAL_TRUE  { satisfied = true; break; }
-                    if v == VAL_UNASSIGNED { unassigned += 1; last_lit = c.lits[j]; }
+                    v: Val = lit_val(&self.assignment[0], c.lits[j]);
+                    if v == Val.True  { satisfied = true; break; }
+                    if v == Val.Unassigned { unassigned += 1; last_lit = c.lits[j]; }
                 }
 
                 if !satisfied {
                     if unassigned == 0 { return false; }
                     if unassigned == 1 {
                         v_idx: i32 = last_lit;
-                        val: i8 = VAL_TRUE;
+                        val: Val = Val.True;
                         if v_idx < 0 { 
                             v_idx = -v_idx; 
-                            val = VAL_FALSE;
+                            val = Val.False;
                         }
                         self.assign(v_idx, val);
                     }
@@ -96,7 +98,7 @@ impl Formula {
         if !self.propagate(trail_start) {
             for (i: i64 = trail_start; i < self.trail.len; i += 1) {
                 var_idx: i32 = self.trail.get(i);
-                self.assignment[var_idx as i64 - 1] = VAL_UNASSIGNED;
+                self.assignment[var_idx as i64 - 1] = Val.Unassigned;
             }
             self.trail.len = trail_start;
             return -1;
@@ -104,7 +106,7 @@ impl Formula {
 
         pick: i32 = -1;
         for (i: i32 = pick_start; i < 729; i += 1) {
-            if self.assignment[i as i64] == VAL_UNASSIGNED { pick = i; break; }
+            if self.assignment[i as i64] == Val.Unassigned { pick = i; break; }
         }
 
         if pick == -1 {
@@ -112,7 +114,7 @@ impl Formula {
             for (r: i32 = 0; r < 9; r += 1) {
                 for (c: i32 = 0; c < 9; c += 1) {
                     for (v: i32 = 0; v < 9; v += 1) {
-                        if (lit_val(&self.assignment[0], sv(r, c, v)) == VAL_TRUE) {
+                        if (lit_val(&self.assignment[0], sv(r, c, v)) == Val.True) {
                             digit: i32 = v + 1;
                             total = total + (digit * digit);
                         }
@@ -122,23 +124,23 @@ impl Formula {
             return total;
         }
 
-        self.assign(pick + 1, VAL_TRUE);
+        self.assign(pick + 1, Val.True);
         res1: i32 = self.solve(pick + 1);
         if res1 >= 0 { return res1; }
 
         for (i: i64 = trail_start; i < self.trail.len; i += 1) {
             var_idx: i32 = self.trail.get(i);
-            self.assignment[var_idx as i64 - 1] = VAL_UNASSIGNED;
+            self.assignment[var_idx as i64 - 1] = Val.Unassigned;
         }
         self.trail.len = trail_start;
 
-        self.assign(pick + 1, VAL_FALSE);
+        self.assign(pick + 1, Val.False);
         res2: i32 = self.solve(pick + 1);
         
         if res2 < 0 {
             for (i: i64 = trail_start; i < self.trail.len; i += 1) {
                 var_idx: i32 = self.trail.get(i);
-                self.assignment[var_idx as i64 - 1] = VAL_UNASSIGNED;
+                self.assignment[var_idx as i64 - 1] = Val.Unassigned;
             }
             self.trail.len = trail_start;
         }
@@ -155,7 +157,7 @@ fn build_sudoku(a: Allocator) -> Formula {
     f.var_to_clauses.with_capacity(&alloc_ref, 729);
 
     for (i: i64 = 0; i < 729; i += 1) { 
-        f.assignment[i] = VAL_UNASSIGNED; 
+        f.assignment[i] = Val.Unassigned; 
         v: Vec<i32>;
         v.with_capacity(&alloc_ref, 32);
         f.var_to_clauses.push(v);
@@ -238,12 +240,12 @@ fn main() -> i32 {
         c: Clause = f.clauses.get(i);
         if c.lits.len == 1 {
             var_idx: i32 = c.lits[0];
-            val: i8 = VAL_TRUE;
+            val: Val = Val.True;
             if var_idx < 0 { 
                 var_idx = -var_idx; 
-                val = VAL_FALSE;
+                val = Val.False;
             }
-            if f.assignment[var_idx as i64 - 1] == VAL_UNASSIGNED {
+            if f.assignment[var_idx as i64 - 1] == Val.Unassigned {
                 f.assign(var_idx, val);
             } else if f.assignment[var_idx as i64 - 1] != val {
                 return -1; // Conflict in unary clauses

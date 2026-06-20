@@ -77,6 +77,10 @@ static size_t type_hasher(void *ptr) {
             }
             break;
 
+        case TYPE_ENUM:
+            h = hash_combine(h, (size_t)(uintptr_t)type->as.enum_type.name);
+            break;
+
         default:
             break;
     }
@@ -141,7 +145,10 @@ static int type_comparator(void *a, void *b) {
             return 0;
         
         // Future: Structs
-        // case TYPE_STRUCT: return (ta->as.structure.name == tb->as.structure.name) ? 0 : 1;
+        case TYPE_STRUCT: return (ta->as.struct_type.name == tb->as.struct_type.name) ? 0 : 1;
+
+        case TYPE_ENUM:
+            return (ta->as.enum_type.name == tb->as.enum_type.name) ? 0 : 1;
 
         case TYPE_TYPEVAR:
             if (ta->as.typevar.name != tb->as.typevar.name) return 1;
@@ -170,7 +177,7 @@ static void *type_copy_func(Arena *arena, const void *data, size_t len) {
     // So `data` here IS `Type *prototype`.
     const Type *src = (const Type*)data;
     
-    Type *copy = arena_alloc(arena, sizeof(Type));
+    Type *copy = arena_calloc(arena, sizeof(Type));
     if (!copy) return NULL;
     
     // Copy the basic structure
@@ -264,7 +271,7 @@ static Type *create_primitive(TypeStore *ts, PrimitiveKind kind) {
 TypeStore *typestore_create(Arena *arena, DenseArenaInterner *identifiers, DenseArenaInterner *keywords) {
     if (!arena) return NULL;
 
-    TypeStore *ts = arena_alloc(arena, sizeof(TypeStore));
+    TypeStore *ts = arena_calloc(arena, sizeof(TypeStore));
     if (!ts) return NULL;
     
     ts->arena = arena;

@@ -17,6 +17,7 @@
 #include "sema_ops.inc"
 #include "sema_slices.inc"
 #include "sema_generics.inc"
+#include "sema_enums.inc"
 
 #undef SEMA_VALID
 #undef SEMA_ERROR

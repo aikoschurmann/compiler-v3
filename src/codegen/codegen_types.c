@@ -134,6 +134,9 @@ LLVMTypeRef get_llvm_type(CodegenContext *ctx, Type *t) {
                 ICE("get_llvm_type: TYPE_GENERIC_INST lacks concrete_type");
             }
             break;
+        case TYPE_ENUM:
+            res = LLVMInt64TypeInContext(ctx->context);
+            break;
         default:
             ICE("get_llvm_type: unrecognized type kind %d", t->kind);
     }

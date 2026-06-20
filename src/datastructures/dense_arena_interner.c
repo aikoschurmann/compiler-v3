@@ -28,7 +28,7 @@ DenseArenaInterner* intern_table_create(HashMap *hashmap, Arena *arena, CopyFunc
                                        size_t (*hash_func)(void*), int (*cmp_func)(void*, void*)){
     if (!hashmap || !arena || !copy_func || !hash_func || !cmp_func) return NULL;
 
-    DenseArenaInterner *interner = arena_alloc(arena, sizeof(DenseArenaInterner));
+    DenseArenaInterner *interner = arena_calloc(arena, sizeof(DenseArenaInterner));
     if (!interner) return NULL;
 
     interner->arena = arena;
@@ -39,7 +39,7 @@ DenseArenaInterner* intern_table_create(HashMap *hashmap, Arena *arena, CopyFunc
     interner->cmp_func = cmp_func;
 
     /* allocate the DynArray struct itself in the arena */
-    interner->dense_array = arena_alloc(arena, sizeof(DynArray));
+    interner->dense_array = arena_calloc(arena, sizeof(DynArray));
     if (!interner->dense_array) {
         return NULL;
     }
@@ -74,13 +74,13 @@ InternResult* intern(DenseArenaInterner *interner,
     if (found) return found;
 
     /* Allocate each component separately to ensure proper alignment */
-    Slice *key_slice = arena_alloc(interner->arena, sizeof(Slice));
+    Slice *key_slice = arena_calloc(interner->arena, sizeof(Slice));
     if (!key_slice) return NULL;
     
-    InternResult *res = arena_alloc(interner->arena, sizeof(InternResult));
+    InternResult *res = arena_calloc(interner->arena, sizeof(InternResult));
     if (!res) return NULL;
     
-    Entry *ent = arena_alloc(interner->arena, sizeof(Entry));
+    Entry *ent = arena_calloc(interner->arena, sizeof(Entry));
     if (!ent) return NULL;
 
     /* Use the copy function to create canonical copy */

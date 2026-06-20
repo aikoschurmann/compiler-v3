@@ -75,6 +75,12 @@ static void type_print_internal(FILE *out, const Type *type) {
                 fprintf(out, "%.*s", (int)s->len, s->ptr);
             } else fprintf(out, "struct");
             break;
+        case TYPE_ENUM:
+            if (type->as.enum_type.name && type->as.enum_type.name->key) {
+                Slice *s = (Slice*)type->as.enum_type.name->key;
+                fprintf(out, "%.*s", (int)s->len, s->ptr);
+            } else fprintf(out, "enum");
+            break;
         case TYPE_FUNCTION:
             fprintf(out, "fn(");
             for (size_t i = 0; i < type->as.func.param_count; i++) {

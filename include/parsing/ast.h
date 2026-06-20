@@ -23,6 +23,7 @@ typedef enum {
     AST_FUNCTION_DECLARATION,
     AST_PARAM,
     AST_STRUCT_DECLARATION,
+    AST_ENUM_DECLARATION,
     AST_IMPL_DECLARATION,
     AST_IMPORT_DECLARATION,
     AST_ALIAS_DECLARATION,
@@ -155,6 +156,17 @@ typedef struct {
     DynArray *methods;           // Contains AstNode* (AstFunctionDeclaration methods)
     int is_pub;                  // visibility
 } AstStructDeclaration;
+
+typedef struct {
+    InternResult *name;
+    AstNode *value; // Optional integer expression
+} AstEnumVariant;
+
+typedef struct {
+    InternResult *intern_result; // Enum name
+    DynArray *variants;          // Contains AstEnumVariant*
+    int is_pub;                  // visibility
+} AstEnumDeclaration;
 
 typedef struct {
     AstNode *target_type_node; // The type this impl block targets
@@ -293,13 +305,14 @@ struct AstNode {
 
     union {
         AstProgram program;
-        AstVariableDeclaration variable_declaration;
-        AstFunctionDeclaration function_declaration;
-        AstParam param;
-        AstStructDeclaration struct_declaration;
-        AstImplDeclaration impl_declaration;
-        AstImportDeclaration import_declaration;
-        AstAliasDeclaration alias_declaration;
+        AstVariableDeclaration   variable_declaration;
+        AstFunctionDeclaration   function_declaration;
+        AstParam                 param;
+        AstStructDeclaration     struct_declaration;
+        AstEnumDeclaration       enum_declaration;
+        AstImplDeclaration       impl_declaration;
+        AstImportDeclaration     import_declaration;
+        AstAliasDeclaration      alias_declaration;
         struct {
             IntrinsicKind kind;
             DynArray *args; // Array of AstNode*

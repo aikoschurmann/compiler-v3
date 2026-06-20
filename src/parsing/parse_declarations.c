@@ -139,12 +139,21 @@ AstNode *parse_declaration(Parser *p, ParseError *err) {
                 decl->data.function_declaration.link_name = link_name;
             }
             return decl;
-        case TOK_STRUCT: 
+        case TOK_STRUCT:
             decl = parse_struct_declaration(p, err); 
             if (decl) {
                 decl->data.struct_declaration.is_pub = is_pub;
                 if (link_name) {
                     if (err) create_parse_error(err, p, "@link attribute not supported for structs", current);
+                }
+            }
+            return decl;
+        case TOK_ENUM:
+            decl = parse_enum_declaration(p, err);
+            if (decl) {
+                decl->data.enum_declaration.is_pub = is_pub;
+                if (link_name) {
+                    if (err) create_parse_error(err, p, "@link attribute not supported for enums", current);
                 }
             }
             return decl;
@@ -399,6 +408,66 @@ AstNode *parse_struct_declaration(Parser *p, ParseError *err) {
 
     decl->span = span_join(&struct_kw->span, &rbrace->span);
     return decl;
+}
+
+AstNode *parse_enum_declaration(Parser *p, ParseError *err) {
+    if (!consume(p, TOK_ENUM)) {
+        if (err) create_parse_error(err, p, "expected 'enum'", current_token(p));
+        return NULL;
+    }
+
+    Token *name_tok = consume(p, TOK_IDENTIFIER);
+    if (!name_tok) {
+        if (err) create_parse_error(err, p, "expected enum name", current_token(p));
+        return NULL;
+    }
+
+    InternResult *enum_name = name_tok->record;
+    
+    AstNode *enum_node = arena_alloc(p->arena, sizeof(AstNode));
+    enum_node->node_type = AST_ENUM_DECLARATION;
+    enum_node->span = name_tok->span; // Might want to extend it to the end bracket later
+    enum_node->data.enum_declaration.intern_result = enum_name;
+    enum_node->data.enum_declaration.is_pub = 0;
+    
+    DynArray *variants = arena_alloc(p->arena, sizeof(DynArray));
+    dynarray_init_in_arena(variants, p->arena, sizeof(AstEnumVariant), 4);
+    enum_node->data.enum_declaration.variants = variants;
+
+    if (!consume(p, TOK_LBRACE)) {
+        if (err) create_parse_error(err, p, "expected '{' after enum name", current_token(p));
+        return NULL;
+    }
+
+    while (current_token(p) && current_token(p)->type != TOK_RBRACE) {
+        Token *variant_tok = consume(p, TOK_IDENTIFIER);
+        if (!variant_tok) {
+            if (err) create_parse_error(err, p, "expected enum variant name", current_token(p));
+            return NULL;
+        }
+
+        AstEnumVariant variant = {0};
+        variant.name = variant_tok->record;
+        
+        if (parser_match(p, TOK_ASSIGN)) {
+            // Optional explicitly assigned value (expect literal integer for now, or arbitrary expr)
+            variant.value = parse_expression(p, err);
+            if (!variant.value) return NULL;
+        }
+
+        dynarray_push_value(variants, &variant);
+
+        if (!parser_match(p, TOK_COMMA)) {
+            break;
+        }
+    }
+
+    if (!consume(p, TOK_RBRACE)) {
+        if (err) create_parse_error(err, p, "expected '}' after enum variants", current_token(p));
+        return NULL;
+    }
+
+    return enum_node;
 }
 
 AstNode *parse_impl_declaration(Parser *p, ParseError *err) {

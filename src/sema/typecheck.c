@@ -443,7 +443,7 @@ static void register_program_structs(TypeCheckContext *ctx, Scope *global_scope)
         if (!struct_decl->intern_result) continue;
 
         if (struct_decl->type_params && struct_decl->type_params->count > 0) {
-            Type *struct_type = arena_alloc(ctx->store->arena, sizeof(Type));
+            Type *struct_type = arena_calloc(ctx->store->arena, sizeof(Type));
             struct_type->kind = TYPE_STRUCT;
             struct_type->as.struct_type.name = struct_decl->intern_result;
             struct_type->as.struct_type.decl_node = decl;
@@ -462,7 +462,7 @@ static void register_program_structs(TypeCheckContext *ctx, Scope *global_scope)
             continue;
         }
 
-        Type *struct_type = arena_alloc(ctx->store->arena, sizeof(Type));
+        Type *struct_type = arena_calloc(ctx->store->arena, sizeof(Type));
         struct_type->kind = TYPE_STRUCT;
         struct_type->as.struct_type.name = struct_decl->intern_result;
         struct_type->as.struct_type.decl_node = decl;
@@ -473,6 +473,32 @@ static void register_program_structs(TypeCheckContext *ctx, Scope *global_scope)
 
         decl->type = struct_type;
         define_symbol_or_error(ctx, global_scope, struct_decl->intern_result, decl->type, SYMBOL_VALUE_TYPE, decl->span, struct_decl->is_pub, decl->filename, decl);
+    }
+}
+
+static void register_program_enums(TypeCheckContext *ctx, Scope *global_scope) {
+    if (!ctx || !ctx->program) return;
+    AstProgram *program = &ctx->program->data.program;
+    if (!program->decls) return;
+
+    for (size_t i = 0; i < program->decls->count; i++) {
+        AstNode *decl = *(AstNode**)dynarray_get(program->decls, i);
+        if (!decl || decl->node_type != AST_ENUM_DECLARATION) continue;
+
+        ctx->filename = decl->filename;
+        AstEnumDeclaration *enum_decl = &decl->data.enum_declaration;
+        if (!enum_decl->intern_result) continue;
+
+        Type *enum_type = arena_calloc(ctx->store->arena, sizeof(Type));
+        enum_type->kind = TYPE_ENUM;
+        enum_type->as.enum_type.name = enum_decl->intern_result;
+        enum_type->as.enum_type.decl_node = decl;
+        enum_type->as.enum_type.variant_count = enum_decl->variants ? enum_decl->variants->count : 0;
+        enum_type->as.enum_type.variants = NULL;
+        enum_type->as.enum_type.variant_map = NULL;
+        decl->type = enum_type;
+
+        define_symbol_or_error(ctx, global_scope, enum_decl->intern_result, decl->type, SYMBOL_VALUE_TYPE, decl->span, enum_decl->is_pub, decl->filename, decl);
     }
 }
 
@@ -563,7 +589,7 @@ static void group_program_methods(TypeCheckContext *ctx, Scope *global_scope) {
             if (struct_node && struct_node->node_type == AST_STRUCT_DECLARATION) {
                 AstStructDeclaration *struct_decl = &struct_node->data.struct_declaration;
                 if (!struct_decl->methods) {
-                    struct_decl->methods = arena_alloc(ctx->store->arena, sizeof(DynArray));
+                    struct_decl->methods = arena_calloc(ctx->store->arena, sizeof(DynArray));
                     dynarray_init_in_arena(struct_decl->methods, ctx->store->arena, sizeof(AstNode*), 4);
                 }
                 dynarray_push_value(struct_decl->methods, &decl);
@@ -629,6 +655,65 @@ static void resolve_program_structs(TypeCheckContext *ctx, Scope *global_scope) 
         }
     }
     dynarray_free(&path);
+}
+
+static void resolve_program_enums(TypeCheckContext *ctx, Scope *global_scope) {
+    if (!ctx || !ctx->program) return;
+    AstProgram *program = &ctx->program->data.program;
+    if (!program->decls) return;
+
+    for (size_t i = 0; i < program->decls->count; i++) {
+        AstNode *decl = *(AstNode**)dynarray_get(program->decls, i);
+        if (!decl || decl->node_type != AST_ENUM_DECLARATION) continue;
+
+        ctx->filename = decl->filename;
+        Type *enum_type = decl->type;
+        if (!enum_type || enum_type->kind != TYPE_ENUM) continue;
+
+        AstEnumDeclaration *enum_decl = &decl->data.enum_declaration;
+        size_t count = enum_decl->variants ? enum_decl->variants->count : 0;
+        enum_type->as.enum_type.variant_count = count;
+
+        if (count > 0) {
+            enum_type->as.enum_type.variants = arena_alloc(ctx->store->arena, sizeof(EnumVariant) * count);
+            enum_type->as.enum_type.variant_map = hashmap_create(ctx->store->arena, (count * 4) / 3 + 1);
+
+            int64_t current_val = 0;
+            for (size_t v = 0; v < count; v++) {
+                AstEnumVariant *variant_node = dynarray_get(enum_decl->variants, v);
+                EnumVariant *variant = &enum_type->as.enum_type.variants[v];
+                variant->name = variant_node->name;
+
+                if (variant_node->value) {
+                    // Evaluate constant expression
+                    check_expression(ctx, global_scope, variant_node->value, NULL);
+                    // Const evaluation. For now assume it's AST_LITERAL
+                    if (variant_node->value->node_type == AST_LITERAL && variant_node->value->data.literal.type == INT_LITERAL) {
+                        current_val = variant_node->value->data.literal.value.int_val;
+                    } else {
+                        TypeError err = { .kind = TE_TYPE_MISMATCH, .span = variant_node->value->span, .filename = ctx->filename };
+                        dynarray_push_value(ctx->errors, &err);
+                    }
+                }
+
+                variant->value = current_val;
+
+                // Check for duplicate variant
+                if (hashmap_get(enum_type->as.enum_type.variant_map, variant->name->key, str_hash, str_cmp)) {
+                    TypeError err = { .kind = TE_REDECLARATION, .span = decl->span, .filename = ctx->filename, .as.name.name = variant->name->key };
+                    dynarray_push_value(ctx->errors, &err);
+                } else {
+                    hashmap_put(enum_type->as.enum_type.variant_map, variant->name->key, variant, str_hash, str_cmp);
+                }
+
+                current_val++;
+            }
+        }
+        
+        // Finalize intern
+        InternResult *interned = intern_type(ctx->store, enum_type);
+        decl->type = (Type*)((Slice*)interned->key)->ptr;
+    }
 }
 
 static void resolve_program_globals(TypeCheckContext *ctx, Scope *global_scope) {
@@ -793,7 +878,7 @@ static void resolve_program_methods(TypeCheckContext *ctx, Scope *global_scope) 
                     if (base_type) {
                         DynArray *impls = (DynArray*)hashmap_get(ctx->store->impl_registry, (void*)base_type, ptr_hash, ptr_cmp);
                         if (!impls) {
-                            impls = arena_alloc(ctx->store->arena, sizeof(DynArray));
+                            impls = arena_calloc(ctx->store->arena, sizeof(DynArray));
                             dynarray_init_in_arena(impls, ctx->store->arena, sizeof(AstNode*), 4);
                             hashmap_put(ctx->store->impl_registry, (void*)base_type, impls, ptr_hash, ptr_cmp);
                         }
@@ -815,14 +900,14 @@ static void resolve_program_methods(TypeCheckContext *ctx, Scope *global_scope) 
                     func->target_type_node = impl->target_type_node;
                     
                     if (func->type_params && func->type_params->count > 0) {
-                        Symbol *sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+                        Symbol *sym = arena_calloc(ctx->store->arena, sizeof(Symbol));
                         sym->name_rec = func->intern_result;
                         sym->type = NULL;
                         sym->kind = SYMBOL_GENERIC_FUNCTION;
                         sym->decl_node = method_decl;
                         sym->is_pub = func->is_pub;
                         sym->filename = method_decl->filename;
-                        sym->overloads = arena_alloc(ctx->store->arena, sizeof(DynArray));
+                        sym->overloads = arena_calloc(ctx->store->arena, sizeof(DynArray));
             dynarray_init_in_arena(sym->overloads, ctx->store->arena, sizeof(Symbol*), 4);
 
                         Symbol *existing_method = (Symbol*)hashmap_get(target_type->as.struct_type.methods, func->intern_result->key, ptr_hash, ptr_cmp);
@@ -846,7 +931,7 @@ static void resolve_program_methods(TypeCheckContext *ctx, Scope *global_scope) 
 
                     resolve_function_decl(ctx, global_scope, method_decl);
                     
-                    Symbol *sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+                    Symbol *sym = arena_calloc(ctx->store->arena, sizeof(Symbol));
                     sym->name_rec = func->intern_result;
                     sym->type = method_decl->type;
                     sym->kind = SYMBOL_VALUE_FUNCTION;
@@ -897,14 +982,14 @@ static void resolve_program_methods(TypeCheckContext *ctx, Scope *global_scope) 
         }
 
         if (func->type_params && func->type_params->count > 0) {
-            Symbol *sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+            Symbol *sym = arena_calloc(ctx->store->arena, sizeof(Symbol));
             sym->name_rec = func->intern_result;
             sym->type = NULL;
             sym->kind = SYMBOL_GENERIC_FUNCTION;
             sym->decl_node = decl;
             sym->is_pub = func->is_pub;
             sym->filename = decl->filename;
-            sym->overloads = arena_alloc(ctx->store->arena, sizeof(DynArray));
+            sym->overloads = arena_calloc(ctx->store->arena, sizeof(DynArray));
             dynarray_init_in_arena(sym->overloads, ctx->store->arena, sizeof(Symbol*), 4);
 
             Symbol *existing_method = (Symbol*)hashmap_get(target_type->as.struct_type.methods, func->intern_result->key, ptr_hash, ptr_cmp);
@@ -930,7 +1015,7 @@ static void resolve_program_methods(TypeCheckContext *ctx, Scope *global_scope) 
         resolve_function_decl(ctx, global_scope, decl);
 
         // 3. Register in struct's method map
-        Symbol *sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+        Symbol *sym = arena_calloc(ctx->store->arena, sizeof(Symbol));
         sym->name_rec = func->intern_result;
         sym->type = decl->type;
         sym->kind = SYMBOL_VALUE_FUNCTION;
@@ -1457,6 +1542,7 @@ void typecheck_program(TypeCheckContext *ctx) {
 
         // Step A: Names (Register Struct/Global/Function/Alias names)
         register_program_structs(ctx, unit->global_scope);
+        register_program_enums(ctx, unit->global_scope);
         register_program_globals(ctx, unit->global_scope);
         register_program_functions(ctx, unit->global_scope);
         register_program_aliases(ctx, unit->global_scope);
@@ -1469,6 +1555,7 @@ void typecheck_program(TypeCheckContext *ctx) {
         // Step C: Full Signatures (Types are now available via imports)
         resolve_program_aliases(ctx, unit->global_scope);
         resolve_program_structs(ctx, unit->global_scope);
+        resolve_program_enums(ctx, unit->global_scope);
         resolve_program_globals(ctx, unit->global_scope);
         resolve_program_functions(ctx, unit->global_scope);
         resolve_program_methods(ctx, unit->global_scope);
@@ -1661,7 +1748,7 @@ static Type *instantiate_generic_struct(TypeCheckContext *ctx, Scope *scope, Sym
         }
     }
 
-    MonoJob *job = arena_alloc(ctx->store->arena, sizeof(MonoJob));
+    MonoJob *job = arena_calloc(ctx->store->arena, sizeof(MonoJob));
     job->sym = sym;
     job->inst_type = inst_type;
     job->scope = scope;
@@ -1739,7 +1826,7 @@ static void drain_mono_queue(TypeCheckContext *ctx) {
         define_symbol_or_error(ctx, inst_scope, tp_name, arg_types[i], SYMBOL_VALUE_TYPE, sym->span, false, sym->filename, NULL);
     }
 
-    Type *concrete_struct = arena_alloc(ctx->store->arena, sizeof(Type));
+    Type *concrete_struct = arena_calloc(ctx->store->arena, sizeof(Type));
     concrete_struct->kind = TYPE_STRUCT;
     concrete_struct->as.struct_type.name = mangled_res;
     concrete_struct->as.struct_type.decl_node = sym->decl_node;
@@ -1843,14 +1930,14 @@ Symbol *instantiate_generic_method(TypeCheckContext *ctx, Scope *scope, Type *in
             mono_func->target_type_node->data.identifier.intern_result = concrete_struct->as.struct_type.name;
         }
         
-        Symbol *method_sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+        Symbol *method_sym = arena_calloc(ctx->store->arena, sizeof(Symbol));
         method_sym->name_rec = mono_func->intern_result;
         method_sym->kind = SYMBOL_GENERIC_FUNCTION;
         method_sym->decl_node = mono_method;
         method_sym->is_pub = mono_func->is_pub;
         method_sym->filename = mono_method->filename;
         method_sym->module_scope = inst_scope; // Save struct's generic bindings
-        method_sym->overloads = arena_alloc(ctx->store->arena, sizeof(DynArray));
+        method_sym->overloads = arena_calloc(ctx->store->arena, sizeof(DynArray));
         dynarray_init_in_arena(method_sym->overloads, ctx->store->arena, sizeof(Symbol*), 4);
         
         hashmap_put(concrete_struct->as.struct_type.methods, orig_name->key, method_sym, ptr_hash, ptr_cmp);
@@ -1862,7 +1949,7 @@ Symbol *instantiate_generic_method(TypeCheckContext *ctx, Scope *scope, Type *in
         mono_func->target_type_node->data.identifier.intern_result = concrete_struct->as.struct_type.name;
     }
     
-    Symbol *method_sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+    Symbol *method_sym = arena_calloc(ctx->store->arena, sizeof(Symbol));
     method_sym->name_rec = mono_func->intern_result;
     method_sym->kind = SYMBOL_VALUE_FUNCTION;
     method_sym->decl_node = mono_method;
@@ -1915,7 +2002,7 @@ Symbol *instantiate_generic_function(TypeCheckContext *ctx, Scope *scope, Symbol
     }
     
     if (!sym->overloads) {
-        sym->overloads = arena_alloc(ctx->store->arena, sizeof(DynArray));
+        sym->overloads = arena_calloc(ctx->store->arena, sizeof(DynArray));
         dynarray_init_in_arena(sym->overloads, ctx->store->arena, sizeof(Symbol*), 4);
     }
     
@@ -1967,7 +2054,7 @@ Symbol *instantiate_generic_function(TypeCheckContext *ctx, Scope *scope, Symbol
     mono_func->intern_result = mangled_res;
     mono_func->type_params = NULL; // No longer generic
     
-    Symbol *inst_sym = arena_alloc(ctx->store->arena, sizeof(Symbol));
+    Symbol *inst_sym = arena_calloc(ctx->store->arena, sizeof(Symbol));
     inst_sym->name_rec = mangled_res;
     inst_sym->kind = SYMBOL_VALUE_FUNCTION;
     inst_sym->decl_node = mono_node;

@@ -29,10 +29,16 @@ typedef enum {
     PRIM_CHAR
 } PrimitiveKind;
 
-typedef struct StructField {
+typedef struct {
     InternResult *name;
-    Type *type;
+    Type *type; 
+    int32_t offset;
 } StructField;
+
+typedef struct {
+    InternResult *name;
+    int64_t value;
+} EnumVariant;
 
 struct Type {
     TypeKind kind;
@@ -78,9 +84,12 @@ struct Type {
 
         // TYPE_ENUM
         struct {
-            char *name;       // Debug name
-            Symbol *decl_node; // Link back to the AST/Symbol table for fields
-        } user;
+            InternResult *name;
+            struct AstNode *decl_node;
+            EnumVariant *variants;
+            size_t variant_count;
+            HashMap *variant_map;
+        } enum_type;
 
         // TYPE_TYPEVAR
         struct {
