@@ -40,6 +40,10 @@ bool type_is_address_only(Type *t) {
 }
 
 bool type_is_indirect(CodegenContext *ctx, Type *t) {
+    // Fixed-size arrays are always passed by value via byval pointer.
+    // The caller's array alloca is passed as a pointer; LLVM copies it
+    // onto the callee's stack frame, giving true pass-by-value semantics.
+    if (t->kind == TYPE_ARRAY) return true;
     if (t->kind != TYPE_STRUCT && t->kind != TYPE_GENERIC_INST) return false;
     LLVMTypeRef llvm_ty = get_llvm_type(ctx, t);
     // Threshold: 16 bytes (2 x 64-bit registers)

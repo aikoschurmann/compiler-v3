@@ -38,3 +38,29 @@ CODEGEN_EXIT("null_keyword_init",
     "    if (p == null) { return 1; }\n"
     "    return 0;\n"
     "}", 1)
+
+// Array pass-by-value: mutation inside callee must NOT affect the caller's array
+CODEGEN_EXIT("array_byval_no_mutation",
+    "fn zero_first(arr: i32[3]) -> void {\n"
+    "    arr[0] = 0;\n"
+    "}\n"
+    "fn main() -> i32 {\n"
+    "    nums: i32[3] = {42, 2, 3};\n"
+    "    zero_first(nums);\n"
+    "    return nums[0] - 42;\n"  // must still be 42 -> returns 0
+    "}", 0)
+
+// Array pass-by-value: each recursive call gets its own independent copy
+CODEGEN_EXIT("array_byval_recursive",
+    "fn try_set(arr: i32[4], depth: i32) -> i32 {\n"
+    "    arr[0] = depth;\n"
+    "    if (depth == 0) { return arr[0]; }\n"
+    "    return try_set(arr, depth - 1);\n"
+    "}\n"
+    "fn main() -> i32 {\n"
+    "    data: i32[4] = {0, 0, 0, 0};\n"
+    "    result: i32 = try_set(data, 3);\n"
+    "    if (data[0] != 0) { return 1; }\n"  // caller unchanged
+    "    if (result != 0) { return 2; }\n"   // deepest call returned 0
+    "    return 0;\n"
+    "}", 0)
