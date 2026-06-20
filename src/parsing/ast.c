@@ -11,6 +11,7 @@ static const char *node_type_to_string(AstNodeType type) {
         [AST_FUNCTION_DECLARATION] = "FunctionDeclaration",
         [AST_PARAM] = "Parameter",
         [AST_STRUCT_DECLARATION] = "StructDeclaration",
+        [AST_IMPL_DECLARATION] = "ImplDeclaration",
         [AST_IMPORT_DECLARATION] = "ImportDeclaration",
         [AST_INTRINSIC] = "IntrinsicCall",
         [AST_BLOCK] = "Block",
@@ -414,6 +415,27 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             break;
         }
 
+        case AST_IMPL_DECLARATION: {
+            print_tree_prefix(depth + 1, 0);
+            printf("target_type:\n");
+            if (node->data.impl_declaration.target_type_node) {
+                print_ast_with_prefix(node->data.impl_declaration.target_type_node, depth + 2, 0, keywords, identifiers, strings);
+            } else {
+                print_tree_prefix(depth + 2, 0);
+                printf("(none)\n");
+            }
+            
+            if (node->data.impl_declaration.methods && node->data.impl_declaration.methods->count > 0) {
+                print_tree_prefix(depth + 1, 1);
+                printf("methods:\n");
+                for (size_t i = 0; i < node->data.impl_declaration.methods->count; ++i) {
+                    AstNode *method = *(AstNode**)dynarray_get(node->data.impl_declaration.methods, i);
+                    print_ast_with_prefix(method, depth + 2, i == node->data.impl_declaration.methods->count - 1, keywords, identifiers, strings);
+                }
+            }
+            break;
+        }
+
         case AST_STRUCT_LITERAL: {
             print_tree_prefix(depth + 1, 0);
             printf("type:\n");
@@ -770,6 +792,23 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             }
             break;
 
+        case AST_GENERIC_INST_EXPR:
+            if (node->data.generic_inst_expr.base) {
+                int has_args = node->data.generic_inst_expr.type_args && node->data.generic_inst_expr.type_args->count > 0;
+                print_tree_prefix(depth + 1, !has_args);
+                printf("base:\n");
+                print_ast_with_prefix(node->data.generic_inst_expr.base, depth + 2, 0, keywords, identifiers, strings);
+            }
+            if (node->data.generic_inst_expr.type_args && node->data.generic_inst_expr.type_args->count > 0) {
+                print_tree_prefix(depth + 1, 1);
+                printf("type arguments:\n");
+                for (size_t i = 0; i < node->data.generic_inst_expr.type_args->count; ++i) {
+                    AstNode *arg = *(AstNode**)dynarray_get(node->data.generic_inst_expr.type_args, i);
+                    print_ast_with_prefix(arg, depth + 2, i == node->data.generic_inst_expr.type_args->count - 1, keywords, identifiers, strings);
+                }
+            }
+            break;
+
         case AST_SUBSCRIPT_EXPR:
             if (node->data.subscript_expr.target) {
                 print_tree_prefix(depth + 1, 0);
@@ -924,4 +963,272 @@ void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInte
             printf("(unhandled node type: %d)\n", node->node_type);
             break;
     }
+}
+
+static DynArray *clone_dynarray_of_nodes(DynArray *src, Arena *arena) {
+    if (!src) return NULL;
+    DynArray *dst = arena_alloc(arena, sizeof(DynArray));
+    if (!dst) return NULL;
+    dynarray_init_in_arena(dst, arena, sizeof(AstNode*), src->count);
+    for (size_t i = 0; i < src->count; i++) {
+        AstNode *child = *(AstNode**)dynarray_get(src, i);
+        AstNode *cloned_child = ast_clone_node(child, arena);
+        dynarray_push_value(dst, &cloned_child);
+    }
+    return dst;
+}
+
+static DynArray *clone_dynarray_of_results(DynArray *src, Arena *arena) {
+    if (!src) return NULL;
+    DynArray *dst = arena_alloc(arena, sizeof(DynArray));
+    if (!dst) return NULL;
+    dynarray_init_in_arena(dst, arena, sizeof(InternResult*), src->count);
+    for (size_t i = 0; i < src->count; i++) {
+        InternResult *res = *(InternResult**)dynarray_get(src, i);
+        dynarray_push_value(dst, &res);
+    }
+    return dst;
+}
+
+static DynArray *clone_fields(DynArray *src, Arena *arena) {
+    if (!src) return NULL;
+    DynArray *dst = arena_alloc(arena, sizeof(DynArray));
+    if (!dst) return NULL;
+    dynarray_init_in_arena(dst, arena, sizeof(AstFieldDecl), src->count);
+    for (size_t i = 0; i < src->count; i++) {
+        AstFieldDecl *f = (AstFieldDecl*)dynarray_get(src, i);
+        AstFieldDecl cloned_f = {
+            .name = f->name,
+            .type = ast_clone_node(f->type, arena)
+        };
+        dynarray_push_value(dst, &cloned_f);
+    }
+    return dst;
+}
+
+static DynArray *clone_field_inits(DynArray *src, Arena *arena) {
+    if (!src) return NULL;
+    DynArray *dst = arena_alloc(arena, sizeof(DynArray));
+    if (!dst) return NULL;
+    dynarray_init_in_arena(dst, arena, sizeof(AstFieldInit), src->count);
+    for (size_t i = 0; i < src->count; i++) {
+        AstFieldInit *fi = (AstFieldInit*)dynarray_get(src, i);
+        if (!fi) continue;
+        AstFieldInit cloned_fi = {
+            .name = fi->name,
+            .expr = ast_clone_node(fi->expr, arena)
+        };
+        dynarray_push_value(dst, &cloned_fi);
+    }
+    return dst;
+}
+
+static DynArray *clone_import_symbols(DynArray *src, Arena *arena) {
+    if (!src) return NULL;
+    DynArray *dst = arena_alloc(arena, sizeof(DynArray));
+    if (!dst) return NULL;
+    dynarray_init_in_arena(dst, arena, sizeof(ImportSymbol*), src->count);
+    for (size_t i = 0; i < src->count; i++) {
+        ImportSymbol *sym = *(ImportSymbol**)dynarray_get(src, i);
+        if (!sym) continue;
+        ImportSymbol *cloned_sym = arena_alloc(arena, sizeof(ImportSymbol));
+        if (cloned_sym) {
+            cloned_sym->original_name = sym->original_name;
+            cloned_sym->alias_name = sym->alias_name;
+            dynarray_push_value(dst, &cloned_sym);
+        }
+    }
+    return dst;
+}
+
+AstNode *ast_clone_node(AstNode *node, Arena *arena) {
+    if (!node) return NULL;
+
+    AstNode *clone = arena_alloc(arena, sizeof(AstNode));
+    if (!clone) return NULL;
+
+    // Shallow copy all standard fields
+    memcpy(clone, node, sizeof(AstNode));
+
+    // Deep copy union data depending on node_type
+    switch (node->node_type) {
+        case AST_PROGRAM:
+            clone->data.program.decls = clone_dynarray_of_nodes(node->data.program.decls, arena);
+            break;
+
+        case AST_VARIABLE_DECLARATION:
+            clone->data.variable_declaration.type = ast_clone_node(node->data.variable_declaration.type, arena);
+            clone->data.variable_declaration.initializer = ast_clone_node(node->data.variable_declaration.initializer, arena);
+            break;
+
+        case AST_FUNCTION_DECLARATION:
+            clone->data.function_declaration.return_type = ast_clone_node(node->data.function_declaration.return_type, arena);
+            clone->data.function_declaration.type_params = clone_dynarray_of_results(node->data.function_declaration.type_params, arena);
+            clone->data.function_declaration.target_type_node = ast_clone_node(node->data.function_declaration.target_type_node, arena);
+            clone->data.function_declaration.params = clone_dynarray_of_nodes(node->data.function_declaration.params, arena);
+            clone->data.function_declaration.body = ast_clone_node(node->data.function_declaration.body, arena);
+            break;
+
+        case AST_PARAM:
+            clone->data.param.type = ast_clone_node(node->data.param.type, arena);
+            break;
+
+        case AST_STRUCT_DECLARATION:
+            clone->data.struct_declaration.type_params = clone_dynarray_of_results(node->data.struct_declaration.type_params, arena);
+            clone->data.struct_declaration.fields = clone_fields(node->data.struct_declaration.fields, arena);
+            clone->data.struct_declaration.methods = clone_dynarray_of_nodes(node->data.struct_declaration.methods, arena);
+            break;
+
+        case AST_IMPL_DECLARATION:
+            clone->data.impl_declaration.target_type_node = ast_clone_node(node->data.impl_declaration.target_type_node, arena);
+            clone->data.impl_declaration.type_params = clone_dynarray_of_results(node->data.impl_declaration.type_params, arena);
+            clone->data.impl_declaration.methods = clone_dynarray_of_nodes(node->data.impl_declaration.methods, arena);
+            break;
+
+        case AST_IMPORT_DECLARATION:
+            clone->data.import_declaration.module_path = clone_dynarray_of_results(node->data.import_declaration.module_path, arena);
+            clone->data.import_declaration.specific_symbols = clone_import_symbols(node->data.import_declaration.specific_symbols, arena);
+            if (node->data.import_declaration.resolved_logical_path) {
+                size_t len = strlen(node->data.import_declaration.resolved_logical_path);
+                char *cloned_path = arena_alloc(arena, len + 1);
+                if (cloned_path) {
+                    memcpy(cloned_path, node->data.import_declaration.resolved_logical_path, len + 1);
+                }
+                clone->data.import_declaration.resolved_logical_path = cloned_path;
+            }
+            break;
+
+        case AST_ALIAS_DECLARATION:
+            clone->data.alias_declaration.target = ast_clone_node(node->data.alias_declaration.target, arena);
+            break;
+
+        case AST_INTRINSIC:
+            clone->data.intrinsic.args = clone_dynarray_of_nodes(node->data.intrinsic.args, arena);
+            break;
+
+        case AST_BLOCK:
+            clone->data.block.statements = clone_dynarray_of_nodes(node->data.block.statements, arena);
+            break;
+
+        case AST_IF_STATEMENT:
+            clone->data.if_statement.condition = ast_clone_node(node->data.if_statement.condition, arena);
+            clone->data.if_statement.then_branch = ast_clone_node(node->data.if_statement.then_branch, arena);
+            clone->data.if_statement.else_branch = ast_clone_node(node->data.if_statement.else_branch, arena);
+            break;
+
+        case AST_WHILE_STATEMENT:
+            clone->data.while_statement.condition = ast_clone_node(node->data.while_statement.condition, arena);
+            clone->data.while_statement.body = ast_clone_node(node->data.while_statement.body, arena);
+            break;
+
+        case AST_FOR_STATEMENT:
+            clone->data.for_statement.init = ast_clone_node(node->data.for_statement.init, arena);
+            clone->data.for_statement.condition = ast_clone_node(node->data.for_statement.condition, arena);
+            clone->data.for_statement.post = ast_clone_node(node->data.for_statement.post, arena);
+            clone->data.for_statement.body = ast_clone_node(node->data.for_statement.body, arena);
+            break;
+
+        case AST_RETURN_STATEMENT:
+            clone->data.return_statement.expression = ast_clone_node(node->data.return_statement.expression, arena);
+            break;
+
+        case AST_DEFER_STATEMENT:
+            clone->data.defer_statement.body = ast_clone_node(node->data.defer_statement.body, arena);
+            break;
+
+        case AST_BREAK_STATEMENT:
+        case AST_CONTINUE_STATEMENT:
+            break;
+
+        case AST_EXPR_STATEMENT:
+            clone->data.expr_statement.expression = ast_clone_node(node->data.expr_statement.expression, arena);
+            break;
+
+        case AST_LITERAL:
+            break;
+
+        case AST_IDENTIFIER:
+            clone->data.identifier.symbol = NULL;
+            break;
+
+        case AST_BINARY_EXPR:
+            clone->data.binary_expr.left = ast_clone_node(node->data.binary_expr.left, arena);
+            clone->data.binary_expr.right = ast_clone_node(node->data.binary_expr.right, arena);
+            break;
+
+        case AST_UNARY_EXPR:
+            clone->data.unary_expr.expr = ast_clone_node(node->data.unary_expr.expr, arena);
+            break;
+
+        case AST_POSTFIX_EXPR:
+            clone->data.postfix_expr.expr = ast_clone_node(node->data.postfix_expr.expr, arena);
+            break;
+
+        case AST_ASSIGNMENT_EXPR:
+            clone->data.assignment_expr.lvalue = ast_clone_node(node->data.assignment_expr.lvalue, arena);
+            clone->data.assignment_expr.rvalue = ast_clone_node(node->data.assignment_expr.rvalue, arena);
+            break;
+
+        case AST_CALL_EXPR:
+            clone->data.call_expr.callee = ast_clone_node(node->data.call_expr.callee, arena);
+            clone->data.call_expr.args = clone_dynarray_of_nodes(node->data.call_expr.args, arena);
+            break;
+
+        case AST_GENERIC_INST_EXPR:
+            clone->data.generic_inst_expr.base = ast_clone_node(node->data.generic_inst_expr.base, arena);
+            clone->data.generic_inst_expr.type_args = clone_dynarray_of_nodes(node->data.generic_inst_expr.type_args, arena);
+            break;
+
+        case AST_SUBSCRIPT_EXPR:
+            clone->data.subscript_expr.target = ast_clone_node(node->data.subscript_expr.target, arena);
+            clone->data.subscript_expr.index = ast_clone_node(node->data.subscript_expr.index, arena);
+            break;
+
+        case AST_MEMBER_EXPR:
+            clone->data.member_expr.target = ast_clone_node(node->data.member_expr.target, arena);
+            clone->data.member_expr.symbol = NULL;
+            break;
+
+        case AST_STRUCT_LITERAL:
+            clone->data.struct_literal.type_node = ast_clone_node(node->data.struct_literal.type_node, arena);
+            clone->data.struct_literal.fields = clone_field_inits(node->data.struct_literal.fields, arena);
+            break;
+
+        case AST_CAST:
+            clone->data.cast_expr.expr = ast_clone_node(node->data.cast_expr.expr, arena);
+            clone->data.cast_expr.target_type_node = ast_clone_node(node->data.cast_expr.target_type_node, arena);
+            break;
+
+        case AST_TYPE: {
+            AstType *ast_ty = &node->data.ast_type;
+            AstType *clone_ty = &clone->data.ast_type;
+            switch (ast_ty->kind) {
+                case AST_TYPE_PRIMITIVE:
+                    clone_ty->u.base.path = ast_clone_node(ast_ty->u.base.path, arena);
+                    break;
+                case AST_TYPE_PTR:
+                    clone_ty->u.ptr.target = ast_clone_node(ast_ty->u.ptr.target, arena);
+                    break;
+                case AST_TYPE_ARRAY:
+                    clone_ty->u.array.elem = ast_clone_node(ast_ty->u.array.elem, arena);
+                    clone_ty->u.array.size_expr = ast_clone_node(ast_ty->u.array.size_expr, arena);
+                    break;
+                case AST_TYPE_FUNC:
+                    clone_ty->u.func.param_types = clone_dynarray_of_nodes(ast_ty->u.func.param_types, arena);
+                    clone_ty->u.func.return_type = ast_clone_node(ast_ty->u.func.return_type, arena);
+                    break;
+                case AST_TYPE_APPLICATION:
+                    clone_ty->u.application.base = ast_clone_node(ast_ty->u.application.base, arena);
+                    clone_ty->u.application.args = clone_dynarray_of_nodes(ast_ty->u.application.args, arena);
+                    break;
+            }
+            break;
+        }
+
+        case AST_INITIALIZER_LIST:
+            clone->data.initializer_list.elements = clone_dynarray_of_nodes(node->data.initializer_list.elements, arena);
+            break;
+    }
+
+    return clone;
 }

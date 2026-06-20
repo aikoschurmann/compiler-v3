@@ -23,6 +23,7 @@ typedef enum {
     AST_FUNCTION_DECLARATION,
     AST_PARAM,
     AST_STRUCT_DECLARATION,
+    AST_IMPL_DECLARATION,
     AST_IMPORT_DECLARATION,
     AST_ALIAS_DECLARATION,
     AST_INTRINSIC,
@@ -151,8 +152,15 @@ typedef struct {
     InternResult *intern_result; // Struct name
     DynArray *type_params;       // DynArray<InternResult*>, NULL if not generic
     DynArray *fields;            // Contains AstFieldDecl*
+    DynArray *methods;           // Contains AstNode* (AstFunctionDeclaration methods)
     int is_pub;                  // visibility
 } AstStructDeclaration;
+
+typedef struct {
+    AstNode *target_type_node; // The type this impl block targets
+    DynArray *type_params;     // DynArray<InternResult*>, NULL if not generic impl<T>
+    DynArray *methods;         // Contains AstNode* (AstFunctionDeclaration methods)
+} AstImplDeclaration;
 
 typedef struct {
     DynArray *statements; /* contains AstNode* */
@@ -289,6 +297,7 @@ struct AstNode {
         AstFunctionDeclaration function_declaration;
         AstParam param;
         AstStructDeclaration struct_declaration;
+        AstImplDeclaration impl_declaration;
         AstImportDeclaration import_declaration;
         AstAliasDeclaration alias_declaration;
         struct {
@@ -332,3 +341,4 @@ void print_ast(AstNode *node, int depth, DenseArenaInterner *keywords, DenseAren
 void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInterner *keywords, DenseArenaInterner *identifiers, DenseArenaInterner *strings);
 int is_lvalue_node(AstNode *node);
 int is_assignment_op(TokenKind type);
+AstNode *ast_clone_node(AstNode *node, Arena *arena);

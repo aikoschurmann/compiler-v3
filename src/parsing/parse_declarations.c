@@ -148,6 +148,14 @@ AstNode *parse_declaration(Parser *p, ParseError *err) {
                 }
             }
             return decl;
+        case TOK_IMPL:
+            decl = parse_impl_declaration(p, err);
+            if (decl) {
+                if (link_name) {
+                    if (err) create_parse_error(err, p, "@link attribute not supported for impl blocks", current);
+                }
+            }
+            return decl;
         case TOK_CONST:
         case TOK_IDENTIFIER: 
             decl = parse_declaration_stmt(p, err); 
@@ -183,9 +191,23 @@ AstNode *parse_alias_declaration(Parser *p, ParseError *err) {
         return NULL;
     }
 
-    // Parse the target (e.g. std.io.println)
-    AstNode *target = parse_postfix(p, err);
+    // Parse the target (path or type)
+    AstNode *target = parse_type(p, err);
     if (!target) return NULL;
+
+    // "Unwrap" AST_TYPE_PRIMITIVE so the AST correctly reflects paths vs primitive types
+    if (target->node_type == AST_TYPE && target->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+        if (target->data.ast_type.u.base.path) {
+            target = target->data.ast_type.u.base.path;
+        } else if (target->data.ast_type.u.base.intern_result) {
+            AstNode *ident = new_node_or_err(p, AST_IDENTIFIER, err, "out of memory");
+            if (ident) {
+                ident->data.identifier.intern_result = target->data.ast_type.u.base.intern_result;
+                ident->span = target->span;
+                target = ident;
+            }
+        }
+    }
 
     decl->data.alias_declaration.target = target;
 
@@ -379,6 +401,73 @@ AstNode *parse_struct_declaration(Parser *p, ParseError *err) {
     return decl;
 }
 
+AstNode *parse_impl_declaration(Parser *p, ParseError *err) {
+    if (!p) return NULL;
+    Token *impl_kw = consume(p, TOK_IMPL);
+    if (!impl_kw) return NULL;
+
+    AstNode *decl = new_node_or_err(p, AST_IMPL_DECLARATION, err, "out of memory creating impl declaration node");
+    if (!decl) return NULL;
+
+    DynArray *type_params = NULL;
+    if (current_token(p) && current_token(p)->type == TOK_LT) {
+        consume(p, TOK_LT);
+        type_params = arena_alloc(p->arena, sizeof(DynArray));
+        if (!type_params) {
+            if (err) create_parse_error(err, p, "out of memory for type params", NULL);
+            return NULL;
+        }
+        dynarray_init_in_arena(type_params, p->arena, sizeof(InternResult*), 2);
+
+        do {
+            Token *tp = consume(p, TOK_IDENTIFIER);
+            if (!tp) { create_parse_error(err, p, "expected type parameter name", current_token(p)); return NULL; }
+            dynarray_push_value(type_params, &tp->record);
+        } while (parser_match(p, TOK_COMMA));
+
+        if (!consume(p, TOK_GT)) { create_parse_error(err, p, "expected '>' after type parameters", current_token(p)); return NULL; }
+    }
+    decl->data.impl_declaration.type_params = type_params;
+
+    AstNode *target_type = parse_type(p, err);
+    if (!target_type) return NULL;
+    decl->data.impl_declaration.target_type_node = target_type;
+
+    decl->data.impl_declaration.methods = arena_alloc(p->arena, sizeof(DynArray));
+    if (!decl->data.impl_declaration.methods) {
+        if (err) create_parse_error(err, p, "out of memory allocating impl methods array", current_token(p));
+        return NULL;
+    }
+    dynarray_init_in_arena(decl->data.impl_declaration.methods, p->arena, sizeof(AstNode*), 4);
+
+    if (!consume(p, TOK_LBRACE)) {
+        if (err) create_parse_error(err, p, "expected '{' starting impl body", current_token(p));
+        return NULL;
+    }
+
+    Token *current = current_token(p);
+    while (current && current->type != TOK_RBRACE && current->type != TOK_EOF) {
+        bool is_pub = (parser_match(p, TOK_PUB) != 0);
+
+        AstNode *method = parse_function_declaration(p, err);
+        if (!method) return NULL;
+        
+        method->data.function_declaration.is_pub = is_pub;
+        dynarray_push_value(decl->data.impl_declaration.methods, &method);
+        
+        current = current_token(p);
+    }
+
+    Token *rbrace = consume(p, TOK_RBRACE);
+    if (!rbrace) {
+        if (err) create_parse_error(err, p, "expected '}' closing impl body", current_token(p));
+        return NULL;
+    }
+
+    decl->span = span_join(&impl_kw->span, &rbrace->span);
+    return decl;
+}
+
 AstNode *parse_declaration_stmt(Parser *p, ParseError *err) {
     if (!p) return NULL;
 
@@ -480,26 +569,8 @@ AstNode *parse_function_declaration(Parser *p, ParseError *err) {
     Token *name_tok = consume(p, TOK_IDENTIFIER);
     if (!name_tok) { create_parse_error(err, p, "expected function name", current_token(p)); return NULL; }
 
-    AstNode *target_type = NULL;
-    Token *dot_tok = current_token(p);
-
-    if (dot_tok && dot_tok->type == TOK_DOT) {
-        consume(p, TOK_DOT);
-        
-        // The first token was actually the target struct name
-        target_type = new_node_or_err(p, AST_IDENTIFIER, err, "out of memory creating target type identifier node");
-        if (!target_type) return NULL;
-
-        target_type->data.identifier.intern_result = name_tok->record;
-        target_type->span = name_tok->span;
-        
-        // Now consume the actual method name
-        name_tok = consume(p, TOK_IDENTIFIER);
-        if (!name_tok) { create_parse_error(err, p, "expected method name after '.'", current_token(p)); return NULL; }
-    }
-
     func_decl->data.function_declaration.intern_result = name_tok->record;
-    func_decl->data.function_declaration.target_type_node = target_type;
+    func_decl->data.function_declaration.target_type_node = NULL;
 
     DynArray *type_params = NULL;
     if (current_token(p) && current_token(p)->type == TOK_LT) {

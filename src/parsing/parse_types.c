@@ -57,19 +57,6 @@ AstNode *parse_type(Parser *p, ParseError *err) {
     AstNode *base = parse_type_atom(p, err);
     if (!base) return NULL;
 
-    /* Apply prefix pointers (Right-to-Left) */
-    for (size_t i = prefix_ptrs->count; i > 0; i--) {
-        Token *star = (Token*)dynarray_get(prefix_ptrs, (int)i - 1);
-        AstNode *ptr_type = new_node_or_err(p, AST_TYPE, err, "out of memory creating pointer type node");
-        if (!ptr_type) return NULL;
-
-        ptr_type->data.ast_type.kind = AST_TYPE_PTR;
-        ptr_type->data.ast_type.u.ptr.target = base;
-        ptr_type->data.ast_type.span = span_join(&star->span, &base->span);
-
-        base = ptr_type;
-    }
-
     token = current_token(p);
 
     /* Handle generic type arguments: Vec<i32, bool> */
@@ -94,6 +81,7 @@ AstNode *parse_type(Parser *p, ParseError *err) {
         app_type->data.ast_type.u.application.base = base;
         app_type->data.ast_type.u.application.args = type_args;
         app_type->span = span_join(&base->span, &rgt->span);
+        app_type->data.ast_type.span = app_type->span;
 
         base = app_type;
         token = current_token(p);
@@ -128,6 +116,7 @@ AstNode *parse_type(Parser *p, ParseError *err) {
         array_type->data.ast_type.u.array.elem = NULL; // Set later
         // Temporary span covering just the brackets/size
         array_type->span = span_join(&lbr->span, &rbr->span); 
+        array_type->data.ast_type.span = array_type->span;
 
         if (dynarray_push_value(dims, &array_type) != 0) {
              if (err) create_parse_error(err, p, "out of memory pushing array dim", NULL);
@@ -142,6 +131,7 @@ AstNode *parse_type(Parser *p, ParseError *err) {
         dim_node->data.ast_type.u.array.elem = base;
         // Extend span to cover the base it wraps
         dim_node->span = span_join(&base->span, &dim_node->span);
+        dim_node->data.ast_type.span = dim_node->span;
         base = dim_node;
     }
 
@@ -157,8 +147,23 @@ AstNode *parse_type(Parser *p, ParseError *err) {
         ptr_type->data.ast_type.kind = AST_TYPE_PTR;
         ptr_type->data.ast_type.u.ptr.target = base;
         ptr_type->data.ast_type.span = span_join(&base->span, &star->span);
+        ptr_type->span = ptr_type->data.ast_type.span;
         base = ptr_type;
         token = current_token(p);
+    }
+
+    /* Apply prefix pointers (Right-to-Left) at the very end so they wrap the entire type */
+    for (size_t i = prefix_ptrs->count; i > 0; i--) {
+        Token *star = (Token*)dynarray_get(prefix_ptrs, (int)i - 1);
+        AstNode *ptr_type = new_node_or_err(p, AST_TYPE, err, "out of memory creating pointer type node");
+        if (!ptr_type) return NULL;
+
+        ptr_type->data.ast_type.kind = AST_TYPE_PTR;
+        ptr_type->data.ast_type.u.ptr.target = base;
+        ptr_type->data.ast_type.span = span_join(&star->span, &base->span);
+        ptr_type->span = ptr_type->data.ast_type.span;
+
+        base = ptr_type;
     }
 
     return base;
@@ -178,6 +183,7 @@ AstNode *parse_type_atom(Parser *p, ParseError *err) {
         Token *rparen = consume(p, TOK_RPAREN);
         if (!rparen) { if (err) create_parse_error(err, p, "expected ')' after type", current_token(p)); return NULL; }
         inner->span = span_join(&lpar->span, &rparen->span);
+        inner->data.ast_type.span = inner->span;
         return inner;
     }
 
@@ -197,11 +203,13 @@ AstNode *parse_type_atom(Parser *p, ParseError *err) {
             type_node->data.ast_type.u.base.intern_result = tok->record;
             type_node->data.ast_type.u.base.path = NULL;
             type_node->data.ast_type.span = tok->span;
+            type_node->span = tok->span;
             consume(p, tok->type);
         } else {
             AstNode *primary = parse_path(p, err);
             if (!primary) return NULL;
             type_node->data.ast_type.span = primary->span;
+            type_node->span = primary->span;
             
             if (primary->node_type == AST_IDENTIFIER) {
                 type_node->data.ast_type.u.base.intern_result = primary->data.identifier.intern_result;
@@ -295,5 +303,6 @@ AstNode *parse_function_type(Parser *p, ParseError *err) {
         type_node->data.ast_type.u.func.return_type = NULL;
     }
 
+    type_node->span = type_node->data.ast_type.span;
     return type_node;
 }

@@ -329,6 +329,109 @@ AstNode *parse_unary(Parser *p, ParseError *err) {
     return parse_postfix(p, err);
 }
 
+static AstNode *parse_postfix_generic_inst(Parser *p, AstNode *primary, ParseError *err) {
+    size_t checkpoint = p->current;
+    ParseError ignored_err = {0};
+    consume(p, TOK_LT);
+
+    DynArray *type_args = alloc_dynarray(p, NULL, sizeof(AstNode*), 2, "out of memory");
+    bool success = true;
+
+    AstNode *first_arg = parse_type(p, &ignored_err);
+    if (!first_arg) {
+        success = false;
+    } else {
+        dynarray_push_value(type_args, &first_arg);
+        while (parser_match(p, TOK_COMMA)) {
+            AstNode *next_arg = parse_type(p, &ignored_err);
+            if (!next_arg) { success = false; break; }
+            dynarray_push_value(type_args, &next_arg);
+        }
+    }
+
+    Token *rgt = current_token(p);
+    if (success && rgt && rgt->type == TOK_GT) {
+        consume(p, TOK_GT);
+        // Heuristic: Must be followed by (, {, ;, or ,
+        Token *after = current_token(p);
+        if (after && (after->type == TOK_LPAREN || after->type == TOK_LBRACE || after->type == TOK_SEMICOLON || after->type == TOK_COMMA)) {
+            AstNode *inst = new_node_or_err(p, AST_GENERIC_INST_EXPR, err, "out of memory");
+            if (!inst) return NULL;
+            inst->data.generic_inst_expr.base = primary;
+            inst->data.generic_inst_expr.type_args = type_args;
+            inst->span = span_join(&primary->span, &rgt->span);
+            return inst;
+        }
+    }
+    
+    p->current = checkpoint;
+    return NULL;
+}
+
+static AstNode *parse_postfix_struct_literal(Parser *p, AstNode *primary, ParseError *err) {
+    if (primary->node_type != AST_MEMBER_EXPR && primary->node_type != AST_IDENTIFIER && primary->node_type != AST_GENERIC_INST_EXPR) {
+        return NULL;
+    }
+
+    Token *peek_2 = peek(p, 1);
+    Token *peek_3 = peek(p, 2);
+    bool is_struct_lit = false;
+    
+    if (peek_2 && peek_2->type == TOK_RBRACE) {
+        is_struct_lit = true; // Name {}
+    } else if (peek_2 && peek_2->type == TOK_IDENTIFIER && peek_3 && peek_3->type == TOK_COLON) {
+        is_struct_lit = true; // Name { field: ... }
+    }
+
+    if (!is_struct_lit) return NULL;
+
+    AstNode *struct_lit = new_node_or_err(p, AST_STRUCT_LITERAL, err, "out of memory creating struct literal node");
+    if (!struct_lit) return NULL;
+    struct_lit->data.struct_literal.type_node = primary;
+    
+    consume(p, TOK_LBRACE);
+    struct_lit->data.struct_literal.fields = arena_alloc(p->arena, sizeof(DynArray));
+    if (!struct_lit->data.struct_literal.fields) {
+        if (err) create_parse_error(err, p, "out of memory allocating struct literal fields", current_token(p));
+        return NULL;
+    }
+    dynarray_init_in_arena(struct_lit->data.struct_literal.fields, p->arena, sizeof(AstFieldInit), 4);
+
+    Token *current = current_token(p);
+    while (current && current->type != TOK_RBRACE && current->type != TOK_EOF) {
+        AstFieldInit init = {0};
+        Token *field_name = consume(p, TOK_IDENTIFIER);
+        if (!field_name) {
+            if (err) create_parse_error(err, p, "expected field name in struct literal", current_token(p));
+            return NULL;
+        }
+        init.name = field_name->record;
+
+        if (!consume(p, TOK_COLON)) {
+            if (err) create_parse_error(err, p, "expected ':' after field name", current_token(p));
+            return NULL;
+        }
+
+        AstNode *expr = parse_expression(p, err);
+        if (!expr) return NULL;
+        init.expr = expr;
+
+        dynarray_push_value(struct_lit->data.struct_literal.fields, &init);
+
+        if (!parser_match(p, TOK_COMMA)) break;
+        current = current_token(p);
+    }
+
+    Token *rbrace = consume(p, TOK_RBRACE);
+    if (!rbrace) {
+        if (err) create_parse_error(err, p, "expected '}' closing struct literal", current_token(p));
+        return NULL;
+    }
+
+    struct_lit->span = span_join(&primary->span, &rbrace->span);
+    return struct_lit;
+}
+
 AstNode *parse_postfix(Parser *p, ParseError *err) {
     AstNode *primary = parse_primary(p, err);
     if (!primary) return NULL;
@@ -336,60 +439,20 @@ AstNode *parse_postfix(Parser *p, ParseError *err) {
     Token *token = current_token(p);
     while (token && (token->type == TOK_PLUSPLUS || token->type == TOK_MINUSMINUS || token->type == TOK_LBRACKET || token->type == TOK_LPAREN || token->type == TOK_DOT || token->type == TOK_LBRACE || token->type == TOK_LT)) {
         if (token->type == TOK_PLUSPLUS || token->type == TOK_MINUSMINUS) {
-            Token *op_tok = token;
+            Token *op_tok = consume(p, token->type);
             AstNode *postfix = new_node_or_err(p, AST_UNARY_EXPR, err, "out of memory creating postfix node");
             if (!postfix) return NULL;
-
             postfix->data.unary_expr.expr = primary;
             postfix->data.unary_expr.op = (op_tok->type == TOK_PLUSPLUS) ? OP_POST_INC : OP_POST_DEC;
             postfix->span = span_join(&primary->span, &op_tok->span);
-
-            consume(p, op_tok->type);
             primary = postfix;
 
         } else if (token->type == TOK_LT) {
-            size_t checkpoint = p->current;
-            ParseError ignored_err = {0};
-            consume(p, TOK_LT);
-
-            DynArray *type_args = alloc_dynarray(p, NULL, sizeof(AstNode*), 2, "out of memory");
-            bool success = true;
-
-            // Try to parse at least one type
-            AstNode *first_arg = parse_type(p, &ignored_err);
-            if (!first_arg) {
-                success = false;
+            AstNode *inst = parse_postfix_generic_inst(p, primary, err);
+            if (inst) {
+                primary = inst;
             } else {
-                dynarray_push_value(type_args, &first_arg);
-                while (parser_match(p, TOK_COMMA)) {
-                    AstNode *next_arg = parse_type(p, &ignored_err);
-                    if (!next_arg) { success = false; break; }
-                    dynarray_push_value(type_args, &next_arg);
-                }
-            }
-
-            Token *rgt = current_token(p);
-            if (success && rgt && rgt->type == TOK_GT) {
-                consume(p, TOK_GT);
-                // Potential generic instantiation. 
-                // Heuristic: Must be followed by (, {, or . (for methods)
-                Token *after = current_token(p);
-                if (after && (after->type == TOK_LPAREN || after->type == TOK_LBRACE || after->type == TOK_DOT)) {
-                    AstNode *inst = new_node_or_err(p, AST_GENERIC_INST_EXPR, err, "out of memory");
-                    if (!inst) return NULL;
-                    inst->data.generic_inst_expr.base = primary;
-                    inst->data.generic_inst_expr.type_args = type_args;
-                    inst->span = span_join(&primary->span, &rgt->span);
-                    primary = inst;
-                } else {
-                    // It was a comparison like `a < b > c`
-                    p->current = checkpoint;
-                    break; 
-                }
-            } else {
-                // Not a valid type list or no closing >
-                p->current = checkpoint;
-                break; // Let binary expression parser handle it
+                break; // Not a generic instantiation, let relational ops handle it
             }
 
         } else if (token->type == TOK_LBRACKET) {
@@ -401,7 +464,6 @@ AstNode *parse_postfix(Parser *p, ParseError *err) {
 
             AstNode *array_access = new_node_or_err(p, AST_SUBSCRIPT_EXPR, err, "out of memory creating subscript node");
             if (!array_access) return NULL;
-
             array_access->data.subscript_expr.target = primary;
             array_access->data.subscript_expr.index = index;
             array_access->span = span_join(&primary->span, &rbr->span);
@@ -409,21 +471,17 @@ AstNode *parse_postfix(Parser *p, ParseError *err) {
 
         } else if (token->type == TOK_LPAREN) {
             consume(p, TOK_LPAREN);
-
             AstNode *func_call = new_node_or_err(p, AST_CALL_EXPR, err, "out of memory creating function call node");
             if (!func_call) return NULL;
-
             func_call->data.call_expr.args = alloc_dynarray(p, err, sizeof(AstNode*), 4, "out of memory creating function call args array");
             if (!func_call->data.call_expr.args) return NULL;
-
             if (!parse_argument_list(p, func_call, err)) return NULL;
-
             Token *rparen = consume(p, TOK_RPAREN);
             if (!rparen) { if (err) create_parse_error(err, p, "expected ')' after function call arguments", token); return NULL; }
-
             func_call->data.call_expr.callee = primary;
             func_call->span = span_join(&primary->span, &rparen->span);
             primary = func_call;
+
         } else if (token->type == TOK_DOT) {
             consume(p, TOK_DOT);
             Token *name_tok = consume(p, TOK_IDENTIFIER);
@@ -431,86 +489,23 @@ AstNode *parse_postfix(Parser *p, ParseError *err) {
                 if (err) create_parse_error(err, p, "expected identifier after '.'", current_token(p));
                 return NULL;
             }
-
             AstNode *member_access = new_node_or_err(p, AST_MEMBER_EXPR, err, "out of memory creating member access node");
             if (!member_access) return NULL;
-
             member_access->data.member_expr.target = primary;
             member_access->data.member_expr.member = name_tok->record;
             member_access->span = span_join(&primary->span, &name_tok->span);
             primary = member_access;
+
         } else if (token->type == TOK_LBRACE) {
-            // Struct literal: Name { field: expr, ... }
-            if (primary->node_type != AST_MEMBER_EXPR) {
-                break;
+            AstNode *struct_lit = parse_postfix_struct_literal(p, primary, err);
+            if (struct_lit) {
+                primary = struct_lit;
+            } else {
+                break; // Not a struct literal
             }
-
-            Token *peek_2 = peek(p, 1);
-            Token *peek_3 = peek(p, 2);
-            bool is_struct_lit = false;
-            
-            if (peek_2 && peek_2->type == TOK_RBRACE) {
-                is_struct_lit = true; // Name {}
-            } else if (peek_2 && peek_2->type == TOK_IDENTIFIER && peek_3 && peek_3->type == TOK_COLON) {
-                is_struct_lit = true; // Name { field: ... }
-            }
-
-            if (!is_struct_lit) break; // Not a struct literal
-
-            AstNode *struct_lit = new_node_or_err(p, AST_STRUCT_LITERAL, err, "out of memory creating struct literal node");
-            if (!struct_lit) return NULL;
-            struct_lit->data.struct_literal.type_node = primary;
-            
-            consume(p, TOK_LBRACE);     /* consume '{' */
-            
-            struct_lit->data.struct_literal.fields = arena_alloc(p->arena, sizeof(DynArray));
-            if (!struct_lit->data.struct_literal.fields) {
-                if (err) create_parse_error(err, p, "out of memory allocating struct literal fields", current_token(p));
-                return NULL;
-            }
-            dynarray_init_in_arena(struct_lit->data.struct_literal.fields, p->arena, sizeof(AstFieldInit), 8);
-            
-            Token *current = current_token(p);
-            while (current && current->type != TOK_RBRACE && current->type != TOK_EOF) {
-                AstFieldInit init = {0};
-                Token *field_name = consume(p, TOK_IDENTIFIER);
-                if (!field_name) {
-                    if (err) create_parse_error(err, p, "expected field name in struct literal", current_token(p));
-                    return NULL;
-                }
-                init.name = field_name->record;
-                
-                if (!consume(p, TOK_COLON)) {
-                    if (err) create_parse_error(err, p, "expected ':' after field name", current_token(p));
-                    return NULL;
-                }
-                
-                init.expr = parse_expression(p, err);
-                if (!init.expr) return NULL;
-                dynarray_push_value(struct_lit->data.struct_literal.fields, &init);
-                
-                current = current_token(p);
-                if (current && current->type == TOK_COMMA) {
-                    consume(p, TOK_COMMA);
-                    current = current_token(p);
-                } else {
-                    break;
-                }
-            }
-            
-            Token *rbrace = consume(p, TOK_RBRACE);
-            if (!rbrace) {
-                if (err) create_parse_error(err, p, "expected '}' or ',' in struct literal", current_token(p));
-                return NULL;
-            }
-            
-            struct_lit->span = span_join(&primary->span, &rbrace->span);
-            primary = struct_lit;
         }
-
         token = current_token(p);
     }
-
     return primary;
 }
 
@@ -595,11 +590,12 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
             
             if (current_token(p)->type != TOK_RPAREN) {
                 while (1) {
-                    // Peek to see if this argument is a type
                     Token *peek_tok = current_token(p);
                     AstNode *arg = NULL;
+                    bool is_first_arg = intrinsic->data.intrinsic.args->count == 0;
                     
-                    if (peek_tok && (peek_tok->type >= TOK_I8 && peek_tok->type <= TOK_VOID)) {
+                    if ((is_first_arg && intrinsic->data.intrinsic.kind == INTRINSIC_ALLOC) ||
+                        (peek_tok && (peek_tok->type >= TOK_I8 && peek_tok->type <= TOK_VOID))) {
                          arg = parse_type(p, err);
                     } else {
                          arg = parse_expression(p, err);
@@ -675,6 +671,9 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
             return literal;
         }
 
+        case TOK_I8: case TOK_I16: case TOK_I32: case TOK_I64:
+        case TOK_U8: case TOK_U16: case TOK_U32: case TOK_U64:
+        case TOK_F32: case TOK_F64: case TOK_BOOL: case TOK_VOID:
         case TOK_IDENTIFIER: {
             Token *peek_tok = peek(p, 1);
             if (peek_tok && peek_tok->type == TOK_LBRACE) {
@@ -699,7 +698,7 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
                     struct_lit->data.struct_literal.type_node = type_ident;
                     
                     Span start_span = token->span;
-                    consume(p, TOK_IDENTIFIER); /* consume name */
+                    consume(p, token->type); /* consume name */
                     consume(p, TOK_LBRACE);     /* consume '{' */
 
                     struct_lit->data.struct_literal.fields = arena_alloc(p->arena, sizeof(DynArray));
@@ -753,7 +752,7 @@ AstNode *parse_primary(Parser *p, ParseError *err) {
             if (!identifier) return NULL;
             identifier->data.identifier.intern_result = token->record;
             identifier->span = token->span;
-            consume(p, TOK_IDENTIFIER);
+            consume(p, token->type);
             return identifier;
         }
 
